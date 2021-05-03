@@ -72,7 +72,7 @@ struct ClientSocket {
 
 #[pymethods]
 impl ClientSocket {
-    fn connect(&mut self, address: &PyTuple) -> PyResult<()> {
+    fn connect(&mut self, address: &PyTuple, py: Python<'_>) -> PyResult<()> {
         if address.len() != 2 {
             return Err(PyValueError::new_err(
                 "only 2-element address tuples are supported",
@@ -92,16 +92,18 @@ impl ClientSocket {
 
         self.socket.connect(&addr.into())?;
         if self.do_handshake_on_connect {
-            self.do_handshake()?;
+            self.do_handshake(py)?;
         }
 
         Ok(())
     }
 
-    fn do_handshake(&mut self) -> PyResult<()> {
+    fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
         while self.session.is_handshaking() {
             self.write()?;
             self.read()?;
+
+            py.check_signals()?;
         }
         Ok(())
     }
