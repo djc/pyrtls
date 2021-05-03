@@ -1,0 +1,15 @@
+[package]
+name = "pyrtls"
+version = "0.1.0"
+authors = ["Dirkjan Ochtman <dirkjan@ochtman.nl>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.13.2"
+rustls = "0.19.1"
+rustls-native-certs = "0.5.0"
+socket2 = "0.4"
+webpki = "0.21"
