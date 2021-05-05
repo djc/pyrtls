@@ -1,13 +1,13 @@
 use std::io::{self, Read, Write};
 use std::net::ToSocketAddrs;
-use std::os::unix::io::FromRawFd;
+use std::os::unix::io::{FromRawFd, RawFd};
 use std::sync::Arc;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::proc_macro::{pyclass, pymethods, pymodule};
 use pyo3::types::{PyBytes, PyModule, PyString, PyTuple};
 use pyo3::{PyAny, PyResult, Python};
-use rustls::{ClientSession, Session};
+use rustls::{ClientSession, ServerSession, Session};
 use rustls_native_certs::load_native_certs;
 use socket2::Socket;
 use webpki::DNSNameRef;
@@ -46,13 +46,7 @@ impl ClientConfig {
         };
 
         Ok(ClientSocket {
-            socket: unsafe { Socket::from_raw_fd(fd) },
-            session: ClientSession::new(&self.inner, hostname),
-            write_buf: vec![0; 16_384],
-            writable: 0,
-            read_buf: vec![0; 16_384],
-            readable: 0,
-            user_buf: vec![0; 4_096],
+            state: SessionState::new(fd, ClientSession::new(&self.inner, hostname)),
             do_handshake_on_connect,
         })
     }
@@ -60,13 +54,7 @@ impl ClientConfig {
 
 #[pyclass]
 struct ClientSocket {
-    socket: Socket,
-    session: ClientSession,
-    write_buf: Vec<u8>,
-    writable: usize,
-    read_buf: Vec<u8>,
-    readable: usize,
-    user_buf: Vec<u8>,
+    state: SessionState<ClientSession>,
     do_handshake_on_connect: bool,
 }
 
@@ -90,12 +78,118 @@ impl ClientSocket {
             }
         };
 
-        self.socket.connect(&addr.into())?;
+        self.state.socket.connect(&addr.into())?;
         if self.do_handshake_on_connect {
             self.do_handshake(py)?;
         }
 
         Ok(())
+    }
+
+    fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.state.do_handshake(py)
+    }
+
+    fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
+        self.state.send(bytes)
+    }
+
+    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
+        self.state.recv(size, py)
+    }
+}
+
+impl ClientSocket {}
+
+#[pyclass]
+struct ServerConfig {
+    inner: Arc<rustls::ServerConfig>,
+}
+
+#[pymethods]
+impl ServerConfig {
+    #[new]
+    fn new() -> PyResult<Self> {
+        Ok(Self {
+            inner: Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new())),
+        })
+    }
+
+    fn wrap_socket(&self, sock: &PyAny) -> PyResult<ServerSocket> {
+        let fd = match sock.call_method0("detach")?.extract::<i32>()? {
+            -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
+            fd => fd,
+        };
+
+        Ok(ServerSocket {
+            state: SessionState::new(fd, ServerSession::new(&self.inner)),
+        })
+    }
+}
+
+#[pyclass]
+struct ServerSocket {
+    state: SessionState<ServerSession>,
+}
+
+#[pymethods]
+impl ServerSocket {
+    fn bind(&mut self, address: &PyTuple) -> PyResult<()> {
+        if address.len() != 2 {
+            return Err(PyValueError::new_err(
+                "only 2-element address tuples are supported",
+            ));
+        }
+
+        let host = address.get_item(0).extract::<&str>()?;
+        let port = address.get_item(1).extract::<u16>()?;
+        let addr = match (host, port).to_socket_addrs()?.next() {
+            Some(addr) => addr,
+            None => {
+                return Err(PyValueError::new_err(
+                    "unable to convert address to socket address",
+                ))
+            }
+        };
+
+        self.state.socket.bind(&addr.into())?;
+        Ok(())
+    }
+
+    fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.state.do_handshake(py)
+    }
+
+    fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
+        self.state.send(bytes)
+    }
+
+    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
+        self.state.recv(size, py)
+    }
+}
+
+struct SessionState<T> {
+    socket: Socket,
+    session: T,
+    write_buf: Vec<u8>,
+    writable: usize,
+    read_buf: Vec<u8>,
+    readable: usize,
+    user_buf: Vec<u8>,
+}
+
+impl<T: Session> SessionState<T> {
+    fn new(fd: RawFd, session: T) -> Self {
+        Self {
+            socket: unsafe { Socket::from_raw_fd(fd) },
+            session,
+            write_buf: vec![0; 16_384],
+            writable: 0,
+            read_buf: vec![0; 16_384],
+            readable: 0,
+            user_buf: vec![0; 4_096],
+        }
     }
 
     fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
@@ -123,9 +217,7 @@ impl ClientSocket {
         let read = self.session.read(&mut &mut self.user_buf[..size])?;
         Ok(PyBytes::new(py, &self.user_buf[..read]))
     }
-}
 
-impl ClientSocket {
     fn read(&mut self) -> PyResult<()> {
         if self.readable < self.read_buf.len() {
             self.readable += self.socket.read(&mut self.read_buf[self.readable..])?;
@@ -168,5 +260,7 @@ impl ClientSocket {
 fn pyrtls(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<ClientConfig>()?;
     m.add_class::<ClientSocket>()?;
+    m.add_class::<ServerConfig>()?;
+    m.add_class::<ServerSocket>()?;
     Ok(())
 }
