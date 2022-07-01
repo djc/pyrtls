@@ -1,16 +1,19 @@
+use std::convert::TryInto;
 use std::io::{self, Read, Write};
 use std::net::ToSocketAddrs;
+use std::ops::{Deref, DerefMut};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::sync::Arc;
 
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::proc_macro::{pyclass, pymethods, pymodule};
-use pyo3::types::{PyBytes, PyModule, PyString, PyTuple};
-use pyo3::{PyAny, PyResult, Python};
-use rustls::{ClientSession, ServerSession, Session};
+use pyo3::types::{PyBytes, PyIterator, PyModule, PyString, PyTuple};
+use pyo3::{PyAny, PyObject, PyResult, Python};
+use rustls::{
+    Certificate, ClientConnection, ConnectionCommon, PrivateKey, RootCertStore, ServerConnection,
+};
 use rustls_native_certs::load_native_certs;
 use socket2::Socket;
-use webpki::DNSNameRef;
 
 #[pyclass]
 struct ClientConfig {
@@ -21,10 +24,19 @@ struct ClientConfig {
 impl ClientConfig {
     #[new]
     fn new() -> PyResult<Self> {
-        let mut inner = rustls::ClientConfig::new();
-        inner.root_store = load_native_certs().map_err(|(_, err)| err)?;
+        let mut roots = RootCertStore::empty();
+        for root in load_native_certs()? {
+            // TODO: report the error somehow
+            let _ = roots.add(&rustls::Certificate(root.0));
+        }
+
         Ok(Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(
+                rustls::ClientConfig::builder()
+                    .with_safe_defaults()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth(),
+            ),
         })
     }
 
@@ -40,13 +52,22 @@ impl ClientConfig {
             fd => fd,
         };
 
-        let hostname = match DNSNameRef::try_from_ascii_str(server_hostname.to_str()?) {
+        let hostname = match server_hostname.to_str()?.try_into() {
             Ok(n) => n,
             Err(_) => return Err(PyValueError::new_err("invalid hostname")),
         };
 
+        let conn = match ClientConnection::new(self.inner.clone(), hostname) {
+            Ok(conn) => conn,
+            Err(err) => {
+                return Err(PyException::new_err(format!(
+                    "failed to initialize ClientConnection: {err}"
+                )))
+            }
+        };
+
         Ok(ClientSocket {
-            state: SessionState::new(fd, ClientSession::new(&self.inner, hostname)),
+            state: SessionState::new(fd, conn),
             do_handshake_on_connect,
         })
     }
@@ -54,7 +75,7 @@ impl ClientConfig {
 
 #[pyclass]
 struct ClientSocket {
-    state: SessionState<ClientSession>,
+    state: SessionState<ClientConnection>,
     do_handshake_on_connect: bool,
 }
 
@@ -67,8 +88,8 @@ impl ClientSocket {
             ));
         }
 
-        let host = address.get_item(0).extract::<&str>()?;
-        let port = address.get_item(1).extract::<u16>()?;
+        let host = address.get_item(0)?.extract::<&str>()?;
+        let port = address.get_item(1)?.extract::<u16>()?;
         let addr = match (host, port).to_socket_addrs()?.next() {
             Some(addr) => addr,
             None => {
@@ -99,8 +120,6 @@ impl ClientSocket {
     }
 }
 
-impl ClientSocket {}
-
 #[pyclass]
 struct ServerConfig {
     inner: Arc<rustls::ServerConfig>,
@@ -109,9 +128,26 @@ struct ServerConfig {
 #[pymethods]
 impl ServerConfig {
     #[new]
-    fn new() -> PyResult<Self> {
+    fn new(cert_chain_der: PyObject, private_key_der: &PyBytes, py: Python<'_>) -> PyResult<Self> {
+        let iter = PyIterator::from_object(py, &cert_chain_der)?;
+        let mut certs = Vec::with_capacity(iter.len()?);
+        for cert in iter {
+            certs.push(Certificate(
+                cert?.extract::<&PyBytes>()?.as_bytes().to_vec(),
+            ));
+        }
+
+        let key = PrivateKey(private_key_der.as_bytes().to_vec());
         Ok(Self {
-            inner: Arc::new(rustls::ServerConfig::new(rustls::NoClientAuth::new())),
+            inner: Arc::new(
+                rustls::ServerConfig::builder()
+                    .with_safe_defaults()
+                    .with_no_client_auth()
+                    .with_single_cert(certs, key)
+                    .map_err(|err| {
+                        PyException::new_err(format!("error initializing ServerConfig: {err}"))
+                    })?,
+            ),
         })
     }
 
@@ -121,15 +157,24 @@ impl ServerConfig {
             fd => fd,
         };
 
+        let conn = match ServerConnection::new(self.inner.clone()) {
+            Ok(conn) => conn,
+            Err(err) => {
+                return Err(PyException::new_err(format!(
+                    "failed to initialize ServerConnection: {err}"
+                )))
+            }
+        };
+
         Ok(ServerSocket {
-            state: SessionState::new(fd, ServerSession::new(&self.inner)),
+            state: SessionState::new(fd, conn),
         })
     }
 }
 
 #[pyclass]
 struct ServerSocket {
-    state: SessionState<ServerSession>,
+    state: SessionState<ServerConnection>,
 }
 
 #[pymethods]
@@ -141,8 +186,8 @@ impl ServerSocket {
             ));
         }
 
-        let host = address.get_item(0).extract::<&str>()?;
-        let port = address.get_item(1).extract::<u16>()?;
+        let host = address.get_item(0)?.extract::<&str>()?;
+        let port = address.get_item(1)?.extract::<u16>()?;
         let addr = match (host, port).to_socket_addrs()?.next() {
             Some(addr) => addr,
             None => {
@@ -169,9 +214,9 @@ impl ServerSocket {
     }
 }
 
-struct SessionState<T> {
+struct SessionState<C> {
     socket: Socket,
-    session: T,
+    conn: C,
     write_buf: Vec<u8>,
     writable: usize,
     read_buf: Vec<u8>,
@@ -179,11 +224,14 @@ struct SessionState<T> {
     user_buf: Vec<u8>,
 }
 
-impl<T: Session> SessionState<T> {
-    fn new(fd: RawFd, session: T) -> Self {
+impl<C, S> SessionState<C>
+where
+    C: Deref<Target = ConnectionCommon<S>> + DerefMut,
+{
+    fn new(fd: RawFd, conn: C) -> Self {
         Self {
             socket: unsafe { Socket::from_raw_fd(fd) },
-            session,
+            conn,
             write_buf: vec![0; 16_384],
             writable: 0,
             read_buf: vec![0; 16_384],
@@ -193,7 +241,7 @@ impl<T: Session> SessionState<T> {
     }
 
     fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
-        while self.session.is_handshaking() {
+        while self.conn.is_handshaking() {
             self.write()?;
             self.read()?;
 
@@ -203,7 +251,7 @@ impl<T: Session> SessionState<T> {
     }
 
     fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
-        let written = self.session.write(bytes.as_bytes())?;
+        let written = self.conn.writer().write(bytes.as_bytes())?;
         self.write()?;
         Ok(written)
     }
@@ -214,7 +262,7 @@ impl<T: Session> SessionState<T> {
             self.user_buf.resize_with(size, || 0);
         }
 
-        let read = self.session.read(&mut &mut self.user_buf[..size])?;
+        let read = self.conn.reader().read(&mut &mut self.user_buf[..size])?;
         Ok(PyBytes::new(py, &self.user_buf[..read]))
     }
 
@@ -223,14 +271,12 @@ impl<T: Session> SessionState<T> {
             self.readable += self.socket.read(&mut self.read_buf[self.readable..])?;
         }
 
-        if self.session.wants_read() {
-            let read = self
-                .session
-                .read_tls(&mut &self.read_buf[..self.readable])?;
+        if self.conn.wants_read() {
+            let read = self.conn.read_tls(&mut &self.read_buf[..self.readable])?;
             self.read_buf.copy_within(read..self.readable, 0);
             self.readable -= read;
             if read > 0 {
-                if let Err(e) = self.session.process_new_packets() {
+                if let Err(e) = self.conn.process_new_packets() {
                     return Err(PyValueError::new_err(format!("error: {}", e)));
                 }
             }
@@ -240,9 +286,9 @@ impl<T: Session> SessionState<T> {
     }
 
     fn write(&mut self) -> Result<(), io::Error> {
-        if self.session.wants_write() {
+        if self.conn.wants_write() {
             self.writable += self
-                .session
+                .conn
                 .write_tls(&mut &mut self.write_buf[self.writable..])?;
         }
 
