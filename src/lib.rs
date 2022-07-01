@@ -262,7 +262,7 @@ where
             self.user_buf.resize_with(size, || 0);
         }
 
-        let read = self.conn.reader().read(&mut &mut self.user_buf[..size])?;
+        let read = self.conn.reader().read(&mut self.user_buf[..size])?;
         Ok(PyBytes::new(py, &self.user_buf[..read]))
     }
 
