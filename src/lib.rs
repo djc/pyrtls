@@ -6,7 +6,7 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::proc_macro::{pyclass, pymethods, pymodule};
+use pyo3::{pyclass, pymethods, pymodule};
 use pyo3::types::{PyBytes, PyIterator, PyModule, PyString, PyTuple};
 use pyo3::{PyAny, PyObject, PyResult, Python};
 use rustls::{

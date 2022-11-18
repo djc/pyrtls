@@ -8,7 +8,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.16.5"
+pyo3 = "0.17"
 rustls = "0.20.6"
 rustls-native-certs = "0.6.2"
 socket2 = "0.4"
