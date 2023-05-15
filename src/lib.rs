@@ -1,13 +1,13 @@
 use std::convert::TryInto;
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
 use std::ops::{Deref, DerefMut};
 use std::os::unix::io::{FromRawFd, RawFd};
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::{pyclass, pymethods, pymodule};
 use pyo3::types::{PyBytes, PyIterator, PyModule, PyString, PyTuple};
+use pyo3::{pyclass, pymethods, pymodule};
 use pyo3::{PyAny, PyObject, PyResult, Python};
 use rustls::{
     Certificate, ClientConnection, ConnectionCommon, PrivateKey, RootCertStore, ServerConnection,
@@ -40,12 +40,12 @@ impl ClientConfig {
         })
     }
 
-    #[args(do_handshake_on_connect = "true")]
+    #[pyo3(signature = (sock, server_hostname, do_handshake_on_connect=true))]
     fn wrap_socket(
         &self,
         sock: &PyAny,
-        do_handshake_on_connect: bool,
         server_hostname: &PyString,
+        do_handshake_on_connect: bool,
     ) -> PyResult<ClientSocket> {
         let fd = match sock.call_method0("detach")?.extract::<i32>()? {
             -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
@@ -81,7 +81,7 @@ struct ClientSocket {
 
 #[pymethods]
 impl ClientSocket {
-    fn connect(&mut self, address: &PyTuple, py: Python<'_>) -> PyResult<()> {
+    fn connect(&mut self, address: &PyTuple) -> PyResult<()> {
         if address.len() != 2 {
             return Err(PyValueError::new_err(
                 "only 2-element address tuples are supported",
@@ -101,14 +101,14 @@ impl ClientSocket {
 
         self.state.socket.connect(&addr.into())?;
         if self.do_handshake_on_connect {
-            self.do_handshake(py)?;
+            self.state.do_handshake()?;
         }
 
         Ok(())
     }
 
-    fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
-        self.state.do_handshake(py)
+    fn do_handshake(&mut self) -> PyResult<()> {
+        self.state.do_handshake()
     }
 
     fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
@@ -201,8 +201,8 @@ impl ServerSocket {
         Ok(())
     }
 
-    fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
-        self.state.do_handshake(py)
+    fn do_handshake(&mut self) -> PyResult<()> {
+        self.state.do_handshake()
     }
 
     fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
@@ -217,8 +217,6 @@ impl ServerSocket {
 struct SessionState<C> {
     socket: Socket,
     conn: C,
-    write_buf: Vec<u8>,
-    writable: usize,
     read_buf: Vec<u8>,
     readable: usize,
     user_buf: Vec<u8>,
@@ -232,27 +230,20 @@ where
         Self {
             socket: unsafe { Socket::from_raw_fd(fd) },
             conn,
-            write_buf: vec![0; 16_384],
-            writable: 0,
             read_buf: vec![0; 16_384],
             readable: 0,
             user_buf: vec![0; 4_096],
         }
     }
 
-    fn do_handshake(&mut self, py: Python<'_>) -> PyResult<()> {
-        while self.conn.is_handshaking() {
-            self.write()?;
-            self.read()?;
-
-            py.check_signals()?;
-        }
+    fn do_handshake(&mut self) -> PyResult<()> {
+        let _ = self.conn.complete_io(&mut self.socket)?;
         Ok(())
     }
 
     fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
         let written = self.conn.writer().write(bytes.as_bytes())?;
-        self.write()?;
+        let _ = self.conn.complete_io(&mut self.socket)?;
         Ok(written)
     }
 
@@ -280,22 +271,6 @@ where
                     return Err(PyValueError::new_err(format!("error: {}", e)));
                 }
             }
-        }
-
-        Ok(())
-    }
-
-    fn write(&mut self) -> Result<(), io::Error> {
-        if self.conn.wants_write() {
-            self.writable += self
-                .conn
-                .write_tls(&mut &mut self.write_buf[self.writable..])?;
-        }
-
-        if !self.write_buf.is_empty() {
-            let written = self.socket.write(&self.write_buf[..self.writable])?;
-            self.write_buf.copy_within(written..self.writable, 0);
-            self.writable -= written;
         }
 
         Ok(())
