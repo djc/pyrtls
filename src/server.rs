@@ -41,11 +41,6 @@ impl ServerConfig {
     }
 
     fn wrap_socket(&self, sock: &PyAny) -> PyResult<ServerSocket> {
-        let fd = match sock.call_method0("detach")?.extract::<i32>()? {
-            -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
-            fd => fd,
-        };
-
         let conn = match rustls::ServerConnection::new(self.inner.clone()) {
             Ok(conn) => conn,
             Err(err) => {
@@ -56,7 +51,7 @@ impl ServerConfig {
         };
 
         Ok(ServerSocket {
-            state: SessionState::new(fd, conn),
+            state: SessionState::new(sock, conn)?,
         })
     }
 }

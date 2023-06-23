@@ -42,11 +42,6 @@ impl ClientConfig {
         server_hostname: &PyString,
         do_handshake_on_connect: bool,
     ) -> PyResult<ClientSocket> {
-        let fd = match sock.call_method0("detach")?.extract::<i32>()? {
-            -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
-            fd => fd,
-        };
-
         let hostname = match server_hostname.to_str()?.try_into() {
             Ok(n) => n,
             Err(_) => return Err(PyValueError::new_err("invalid hostname")),
@@ -62,7 +57,7 @@ impl ClientConfig {
         };
 
         Ok(ClientSocket {
-            state: SessionState::new(fd, conn),
+            state: SessionState::new(sock, conn)?,
             do_handshake_on_connect,
         })
     }

@@ -1,10 +1,10 @@
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
-use std::os::unix::io::{FromRawFd, RawFd};
+use std::os::unix::io::FromRawFd;
 
 use pyo3::exceptions::PyValueError;
-use pyo3::pymodule;
 use pyo3::types::{PyBytes, PyModule};
+use pyo3::{pymodule, PyAny};
 use pyo3::{PyResult, Python};
 use rustls::ConnectionCommon;
 use socket2::Socket;
@@ -26,14 +26,19 @@ impl<C, S> SessionState<C>
 where
     C: Deref<Target = ConnectionCommon<S>> + DerefMut,
 {
-    fn new(fd: RawFd, conn: C) -> Self {
-        Self {
-            socket: unsafe { Socket::from_raw_fd(fd) },
+    fn new(sock: &PyAny, conn: C) -> PyResult<Self> {
+        let socket = match sock.call_method0("detach")?.extract::<i32>()? {
+            -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
+            fd => unsafe { Socket::from_raw_fd(fd) },
+        };
+
+        Ok(Self {
+            socket,
             conn,
             read_buf: vec![0; 16_384],
             readable: 0,
             user_buf: vec![0; 4_096],
-        }
+        })
     }
 
     fn do_handshake(&mut self) -> PyResult<()> {
