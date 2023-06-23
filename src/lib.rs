@@ -1,6 +1,9 @@
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
-use std::os::unix::io::FromRawFd;
+#[cfg(unix)]
+use std::os::unix::io::{FromRawFd, RawFd};
+#[cfg(windows)]
+use std::os::windows::io::{FromRawSocket, RawSocket};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyModule};
@@ -27,9 +30,16 @@ where
     C: Deref<Target = ConnectionCommon<S>> + DerefMut,
 {
     fn new(sock: &PyAny, conn: C) -> PyResult<Self> {
-        let socket = match sock.call_method0("detach")?.extract::<i32>()? {
+        #[cfg(unix)]
+        let socket = match sock.call_method0("detach")?.extract::<RawFd>()? {
             -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
             fd => unsafe { Socket::from_raw_fd(fd) },
+        };
+
+        #[cfg(windows)]
+        let socket = match sock.call_method0("detach")?.extract::<RawSocket>()? {
+            // TODO: no clue how Windows expresses an error here?
+            fd => unsafe { Socket::from_raw_socket(fd) },
         };
 
         Ok(Self {
