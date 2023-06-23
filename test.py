@@ -2,6 +2,7 @@ import pyrtls
 import socket
 
 def main():
+    print(pyrtls.__file__)
     client_config = pyrtls.ClientConfig()
     sock = socket.socket()
     sock = client_config.wrap_socket(sock, 'xavamedia.nl')
