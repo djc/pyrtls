@@ -9,9 +9,7 @@ use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::types::{PyBytes, PyIterator, PyModule, PyString, PyTuple};
 use pyo3::{pyclass, pymethods, pymodule};
 use pyo3::{PyAny, PyObject, PyResult, Python};
-use rustls::{
-    Certificate, ClientConnection, ConnectionCommon, PrivateKey, RootCertStore, ServerConnection,
-};
+use rustls::{Certificate, ConnectionCommon, PrivateKey, RootCertStore};
 use rustls_native_certs::load_native_certs;
 use socket2::Socket;
 
@@ -57,7 +55,7 @@ impl ClientConfig {
             Err(_) => return Err(PyValueError::new_err("invalid hostname")),
         };
 
-        let conn = match ClientConnection::new(self.inner.clone(), hostname) {
+        let conn = match rustls::ClientConnection::new(self.inner.clone(), hostname) {
             Ok(conn) => conn,
             Err(err) => {
                 return Err(PyException::new_err(format!(
@@ -75,7 +73,7 @@ impl ClientConfig {
 
 #[pyclass]
 struct ClientSocket {
-    state: SessionState<ClientConnection>,
+    state: SessionState<rustls::ClientConnection>,
     do_handshake_on_connect: bool,
 }
 
@@ -157,7 +155,7 @@ impl ServerConfig {
             fd => fd,
         };
 
-        let conn = match ServerConnection::new(self.inner.clone()) {
+        let conn = match rustls::ServerConnection::new(self.inner.clone()) {
             Ok(conn) => conn,
             Err(err) => {
                 return Err(PyException::new_err(format!(
@@ -174,7 +172,7 @@ impl ServerConfig {
 
 #[pyclass]
 struct ServerSocket {
-    state: SessionState<ServerConnection>,
+    state: SessionState<rustls::ServerConnection>,
 }
 
 #[pymethods]
