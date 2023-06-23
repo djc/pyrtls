@@ -1,4 +1,4 @@
 test-python:
 	cargo build --release
-	cp target/release/libpyrtls.dylib ./pyrtls.so
+	pip3 install --force-reinstall target/wheels/*.whl
 	python3 test.py
