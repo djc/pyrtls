@@ -10,6 +10,48 @@ use rustls::{Certificate, PrivateKey};
 use super::SessionState;
 
 #[pyclass]
+pub(crate) struct ServerSocket {
+    state: SessionState<rustls::ServerConnection>,
+}
+
+#[pymethods]
+impl ServerSocket {
+    fn bind(&mut self, address: &PyTuple) -> PyResult<()> {
+        if address.len() != 2 {
+            return Err(PyValueError::new_err(
+                "only 2-element address tuples are supported",
+            ));
+        }
+
+        let host = address.get_item(0)?.extract::<&str>()?;
+        let port = address.get_item(1)?.extract::<u16>()?;
+        let addr = match (host, port).to_socket_addrs()?.next() {
+            Some(addr) => addr,
+            None => {
+                return Err(PyValueError::new_err(
+                    "unable to convert address to socket address",
+                ))
+            }
+        };
+
+        self.state.socket.bind(&addr.into())?;
+        Ok(())
+    }
+
+    fn do_handshake(&mut self) -> PyResult<()> {
+        self.state.do_handshake()
+    }
+
+    fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
+        self.state.send(bytes)
+    }
+
+    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
+        self.state.recv(size, py)
+    }
+}
+
+#[pyclass]
 pub(crate) struct ServerConfig {
     inner: Arc<rustls::ServerConfig>,
 }
@@ -53,47 +95,5 @@ impl ServerConfig {
         Ok(ServerSocket {
             state: SessionState::new(sock, conn)?,
         })
-    }
-}
-
-#[pyclass]
-pub(crate) struct ServerSocket {
-    state: SessionState<rustls::ServerConnection>,
-}
-
-#[pymethods]
-impl ServerSocket {
-    fn bind(&mut self, address: &PyTuple) -> PyResult<()> {
-        if address.len() != 2 {
-            return Err(PyValueError::new_err(
-                "only 2-element address tuples are supported",
-            ));
-        }
-
-        let host = address.get_item(0)?.extract::<&str>()?;
-        let port = address.get_item(1)?.extract::<u16>()?;
-        let addr = match (host, port).to_socket_addrs()?.next() {
-            Some(addr) => addr,
-            None => {
-                return Err(PyValueError::new_err(
-                    "unable to convert address to socket address",
-                ))
-            }
-        };
-
-        self.state.socket.bind(&addr.into())?;
-        Ok(())
-    }
-
-    fn do_handshake(&mut self) -> PyResult<()> {
-        self.state.do_handshake()
-    }
-
-    fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
-        self.state.send(bytes)
-    }
-
-    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
-        self.state.recv(size, py)
     }
 }
