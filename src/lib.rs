@@ -17,6 +17,17 @@ use client::{ClientConfig, ClientConnection, ClientSocket};
 mod server;
 use server::{ServerConfig, ServerConnection, ServerSocket};
 
+#[pymodule]
+fn pyrtls(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<ClientConfig>()?;
+    m.add_class::<ClientConnection>()?;
+    m.add_class::<ClientSocket>()?;
+    m.add_class::<ServerConfig>()?;
+    m.add_class::<ServerConnection>()?;
+    m.add_class::<ServerSocket>()?;
+    Ok(())
+}
+
 struct SessionState<C> {
     socket: Socket,
     conn: C,
@@ -90,17 +101,6 @@ where
 
         Ok(())
     }
-}
-
-#[pymodule]
-fn pyrtls(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<ClientConfig>()?;
-    m.add_class::<ClientConnection>()?;
-    m.add_class::<ClientSocket>()?;
-    m.add_class::<ServerConfig>()?;
-    m.add_class::<ServerConnection>()?;
-    m.add_class::<ServerSocket>()?;
-    Ok(())
 }
 
 #[pyclass]
