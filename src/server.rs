@@ -1,13 +1,13 @@
+use std::io::{Cursor, Read, Write};
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyBytes, PyIterator, PyTuple};
-use pyo3::{pyclass, pymethods};
-use pyo3::{PyAny, PyObject, PyResult, Python};
+use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyTuple};
+use pyo3::{pyclass, pymethods, PyAny, PyObject, PyResult, Python};
 use rustls::{Certificate, PrivateKey};
 
-use super::SessionState;
+use super::{IoState, SessionState, TlsError};
 
 #[pyclass]
 pub(crate) struct ServerSocket {
@@ -48,6 +48,72 @@ impl ServerSocket {
 
     fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
         self.state.recv(size, py)
+    }
+}
+
+#[pyclass]
+pub(crate) struct ServerConnection {
+    inner: rustls::ServerConnection,
+}
+
+#[pymethods]
+impl ServerConnection {
+    #[new]
+    fn new(config: &ServerConfig) -> PyResult<Self> {
+        Ok(Self {
+            inner: rustls::ServerConnection::new(config.inner.clone()).map_err(TlsError::from)?,
+        })
+    }
+
+    /// Returns `true` if the caller should call `read_tls()` soon
+    fn readable(&self) -> bool {
+        self.inner.wants_read()
+    }
+
+    /// Read TLS content from `buf` into the internal buffer
+    ///
+    /// You should call `process_new_packets()` each time a call to this function succeeds in
+    /// order to empty the incoming TLS data buffer.
+    ///
+    /// Mirrors the `RawIO.write()` interface.
+    fn read_tls(&mut self, buf: &[u8]) -> PyResult<usize> {
+        Ok(self
+            .inner
+            .read_tls(&mut Cursor::new(buf))
+            .map_err(TlsError::from)?)
+    }
+
+    /// Processes any new packets read by a previous call to `read_tls()`
+    fn process_new_packets(&mut self) -> PyResult<IoState> {
+        Ok(self
+            .inner
+            .process_new_packets()
+            .map_err(TlsError::from)?
+            .into())
+    }
+
+    /// Write new plaintext data into the TLS connection
+    fn write(&mut self, buf: &[u8]) -> PyResult<usize> {
+        Ok(self.inner.writer().write(buf).map_err(TlsError::from)?)
+    }
+
+    /// Returns `true` if the caller should call `write_tls_into()` soon
+    fn writable(&self) -> bool {
+        self.inner.wants_write()
+    }
+
+    /// Write TLS messages from the internal buffer into `buf`
+    ///
+    /// Mirrors the `RawIO.readinto()` interface.
+    fn write_tls_into(&mut self, buf: &PyByteArray) -> PyResult<usize> {
+        let mut buf = unsafe { buf.as_bytes_mut() };
+        Ok(self.inner.write_tls(&mut buf).map_err(TlsError::from)?)
+    }
+
+    /// Read new plaintext data from the TLS connection
+    fn read_into(&mut self, buf: &PyByteArray) -> PyResult<usize> {
+        let buf = unsafe { buf.as_bytes_mut() };
+        Ok(self.inner.reader().read(buf).map_err(TlsError::from)?)
     }
 }
 

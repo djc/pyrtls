@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
 #[cfg(unix)]
@@ -7,15 +8,14 @@ use std::os::windows::io::{FromRawSocket, RawSocket};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyModule};
-use pyo3::{pymodule, PyAny};
-use pyo3::{PyResult, Python};
+use pyo3::{pyclass, pymethods, pymodule, PyAny, PyErr, PyResult, Python};
 use rustls::ConnectionCommon;
 use socket2::Socket;
 
 mod client;
-use client::{ClientConfig, ClientSocket};
+use client::{ClientConfig, ClientConnection, ClientSocket};
 mod server;
-use server::{ServerConfig, ServerSocket};
+use server::{ServerConfig, ServerConnection, ServerSocket};
 
 struct SessionState<C> {
     socket: Socket,
@@ -95,8 +95,53 @@ where
 #[pymodule]
 fn pyrtls(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<ClientConfig>()?;
+    m.add_class::<ClientConnection>()?;
     m.add_class::<ClientSocket>()?;
     m.add_class::<ServerConfig>()?;
+    m.add_class::<ServerConnection>()?;
     m.add_class::<ServerSocket>()?;
     Ok(())
+}
+
+#[pyclass]
+struct IoState {
+    inner: rustls::IoState,
+}
+
+#[pymethods]
+impl IoState {
+    fn tls_bytes_to_write(&self) -> usize {
+        self.inner.tls_bytes_to_write()
+    }
+
+    fn plaintext_bytes_to_read(&self) -> usize {
+        self.inner.plaintext_bytes_to_read()
+    }
+
+    fn peer_has_closed(&self) -> bool {
+        self.inner.peer_has_closed()
+    }
+}
+
+impl From<rustls::IoState> for IoState {
+    fn from(value: rustls::IoState) -> Self {
+        Self { inner: value }
+    }
+}
+
+#[pyclass(name = "TLSError")]
+struct TlsError {
+    inner: Box<dyn StdError + Send + Sync + 'static>,
+}
+
+impl<E: StdError + Send + Sync + 'static> From<E> for TlsError {
+    fn from(e: E) -> Self {
+        Self { inner: Box::new(e) }
+    }
+}
+
+impl From<TlsError> for PyErr {
+    fn from(e: TlsError) -> Self {
+        PyValueError::new_err(format!("error: {}", e.inner))
+    }
 }
