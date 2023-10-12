@@ -9,7 +9,7 @@ rust-version = "1.63"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.19"
+pyo3 = "0.20"
 rustls = "0.21"
 rustls-native-certs = "0.6.2"
 socket2 = "0.5"
