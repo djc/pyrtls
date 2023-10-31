@@ -3,9 +3,10 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyTuple};
+use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyString, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
 use rustls::{Certificate, PrivateKey};
+use rustls_pemfile::Item;
 
 use super::{IoState, SessionState, TlsError};
 
@@ -125,13 +126,31 @@ pub(crate) struct ServerConfig {
 #[pymethods]
 impl ServerConfig {
     #[new]
-    fn new(cert_chain_der: &PyBytes, private_key_der: &PyBytes) -> PyResult<Self> {
-        let iter = PyIterator::from_object(&cert_chain_der)?;
-        let mut certs = Vec::with_capacity(iter.len()?);
-        for cert in iter {
-            certs.push(Certificate(
-                cert?.extract::<&PyBytes>()?.as_bytes().to_vec(),
-            ));
+    fn new(cert_chain: &PyIterator, private_key_der: &PyBytes) -> PyResult<Self> {
+        let mut certs = Vec::with_capacity(cert_chain.len()?);
+        for cert in cert_chain {
+            let cert = cert?;
+            if let Ok(bytes) = cert.downcast_exact::<PyBytes>() {
+                let bytes = bytes.as_bytes();
+                if bytes.starts_with(b"-----") {
+                    return Err(
+                        PyValueError::new_err("PEM data passed as certificate bytes").into(),
+                    );
+                }
+
+                certs.push(Certificate(bytes.to_vec()));
+                continue;
+            }
+
+            let pem = cert.downcast_exact::<PyString>()?.to_str()?;
+            match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
+                Ok(Some(Item::X509Certificate(bytes))) => certs.push(Certificate(bytes)),
+                Ok(Some(_)) => {
+                    return Err(PyValueError::new_err("PEM object of invalid type").into())
+                }
+                Ok(None) => return Err(PyValueError::new_err("invalid PEM certificate").into()),
+                Err(err) => return Err(err.into()),
+            }
         }
 
         let key = PrivateKey(private_key_der.as_bytes().to_vec());
