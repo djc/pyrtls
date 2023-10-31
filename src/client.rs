@@ -3,12 +3,13 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyByteArray, PyBytes, PyString, PyTuple};
+use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyString, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
-use rustls::RootCertStore;
+use rustls::{OwnedTrustAnchor, RootCertStore};
 use rustls_native_certs::load_native_certs;
 
 use super::{IoState, SessionState, TlsError};
+use crate::TrustAnchor;
 
 #[pyclass]
 pub(crate) struct ClientSocket {
@@ -137,11 +138,35 @@ pub(crate) struct ClientConfig {
 #[pymethods]
 impl ClientConfig {
     #[new]
-    fn new() -> PyResult<Self> {
+    #[pyo3(signature = (native_roots = true, mozilla_roots = true, custom_roots = None))]
+    fn new(
+        native_roots: bool,
+        mozilla_roots: bool,
+        custom_roots: Option<&PyIterator>,
+    ) -> PyResult<Self> {
         let mut roots = RootCertStore::empty();
-        for root in load_native_certs()? {
-            // TODO: report the error somehow
-            let _ = roots.add(&rustls::Certificate(root.0));
+        if native_roots {
+            for root in load_native_certs()? {
+                // TODO: report the error somehow
+                let _ = roots.add(&rustls::Certificate(root.0));
+            }
+        }
+
+        if mozilla_roots {
+            roots.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    ta.subject,
+                    ta.spki,
+                    ta.name_constraints,
+                )
+            }));
+        }
+
+        if let Some(custom_roots) = custom_roots {
+            for obj in custom_roots {
+                let obj = obj?;
+                roots.add_trust_anchors([obj.extract::<TrustAnchor>()?.inner].into_iter());
+            }
         }
 
         Ok(Self {

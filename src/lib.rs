@@ -9,7 +9,7 @@ use std::os::windows::io::{FromRawSocket, RawSocket};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyModule};
 use pyo3::{pyclass, pymethods, pymodule, PyAny, PyErr, PyResult, Python};
-use rustls::ConnectionCommon;
+use rustls::{ConnectionCommon, OwnedTrustAnchor};
 use socket2::Socket;
 
 mod client;
@@ -100,6 +100,30 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct TrustAnchor {
+    inner: OwnedTrustAnchor,
+}
+
+#[pymethods]
+impl TrustAnchor {
+    #[new]
+    fn new(
+        subject: &PyBytes,
+        subject_public_key_info: &PyBytes,
+        name_constraints: Option<&PyBytes>,
+    ) -> Self {
+        Self {
+            inner: OwnedTrustAnchor::from_subject_spki_name_constraints(
+                subject.as_bytes(),
+                subject_public_key_info.as_bytes(),
+                name_constraints.map(|nc| nc.as_bytes()),
+            ),
+        }
     }
 }
 
