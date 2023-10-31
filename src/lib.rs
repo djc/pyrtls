@@ -7,7 +7,7 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::windows::io::{FromRawSocket, RawSocket};
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::types::{PyBytes, PyIterator, PyModule, PyString};
+use pyo3::types::{PyBytes, PyModule, PyString};
 use pyo3::{pyclass, pymethods, pymodule, PyAny, PyErr, PyResult, Python};
 use rustls::{ConnectionCommon, OwnedTrustAnchor};
 use rustls_pemfile::Item;
@@ -171,14 +171,14 @@ impl From<TlsError> for PyErr {
     }
 }
 
-fn extract_alpn_protocols(iter: Option<&PyIterator>) -> PyResult<Vec<Vec<u8>>> {
+fn extract_alpn_protocols(iter: Option<&PyAny>) -> PyResult<Vec<Vec<u8>>> {
     let mut alpn = Vec::with_capacity(match iter {
         Some(ap) => ap.len()?,
         None => 0,
     });
 
     if let Some(protos) = iter {
-        for proto in protos {
+        for proto in protos.iter()? {
             let proto = proto?;
             if let Ok(proto) = proto.downcast_exact::<PyBytes>() {
                 alpn.push(proto.as_bytes().to_vec());

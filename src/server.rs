@@ -3,7 +3,7 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyTuple};
+use pyo3::types::{PyByteArray, PyBytes, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
 use rustls::{Certificate, PrivateKey};
 use rustls_pemfile::Item;
@@ -130,12 +130,12 @@ impl ServerConfig {
     #[new]
     #[pyo3(signature = (cert_chain, private_key, alpn_protocols = None))]
     fn new(
-        cert_chain: &PyIterator,
+        cert_chain: &PyAny,
         private_key: &PyAny,
-        alpn_protocols: Option<&PyIterator>,
+        alpn_protocols: Option<&PyAny>,
     ) -> PyResult<Self> {
-        let mut certs = Vec::with_capacity(cert_chain.len()?);
-        for cert in cert_chain {
+        let mut certs = Vec::new();
+        for cert in cert_chain.iter()? {
             let cert = cert?;
             if let Ok(bytes) = py_to_der(cert) {
                 certs.push(Certificate(bytes.to_vec()));

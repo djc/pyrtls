@@ -3,7 +3,7 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyString, PyTuple};
+use pyo3::types::{PyByteArray, PyBytes, PyString, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
 use rustls::{OwnedTrustAnchor, RootCertStore};
 use rustls_native_certs::load_native_certs;
@@ -143,8 +143,8 @@ impl ClientConfig {
     fn new(
         native_roots: bool,
         mozilla_roots: bool,
-        custom_roots: Option<&PyIterator>,
-        alpn_protocols: Option<&PyIterator>,
+        custom_roots: Option<&PyAny>,
+        alpn_protocols: Option<&PyAny>,
     ) -> PyResult<Self> {
         let mut roots = RootCertStore::empty();
         if native_roots {
@@ -165,7 +165,7 @@ impl ClientConfig {
         }
 
         if let Some(custom_roots) = custom_roots {
-            for obj in custom_roots {
+            for obj in custom_roots.iter()? {
                 let obj = obj?;
                 if let Ok(ta) = obj.extract::<TrustAnchor>() {
                     roots.add_trust_anchors([ta.inner].into_iter())
