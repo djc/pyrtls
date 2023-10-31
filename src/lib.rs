@@ -1,5 +1,5 @@
 use std::error::Error as StdError;
-use std::io::{Read, Write};
+use std::io::{Cursor, Read, Write};
 use std::ops::{Deref, DerefMut};
 #[cfg(unix)]
 use std::os::unix::io::{FromRawFd, RawFd};
@@ -7,9 +7,10 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::windows::io::{FromRawSocket, RawSocket};
 
 use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyBytes, PyModule};
+use pyo3::types::{PyBytes, PyModule, PyString};
 use pyo3::{pyclass, pymethods, pymodule, PyAny, PyErr, PyResult, Python};
 use rustls::{ConnectionCommon, OwnedTrustAnchor};
+use rustls_pemfile::Item;
 use socket2::Socket;
 
 mod client;
@@ -168,4 +169,22 @@ impl From<TlsError> for PyErr {
     fn from(e: TlsError) -> Self {
         PyValueError::new_err(format!("error: {}", e.inner))
     }
+}
+
+fn py_to_pem(obj: &PyAny) -> PyResult<Item> {
+    let pem = obj.downcast_exact::<PyString>()?.to_str()?;
+    match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
+        Ok(Some(item)) => Ok(item),
+        Ok(None) => Err(PyValueError::new_err("no data found in PEM string").into()),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn py_to_der(obj: &PyAny) -> PyResult<&[u8]> {
+    let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
+    if der.starts_with(b"-----") {
+        return Err(PyValueError::new_err("PEM data passed as bytes object").into());
+    }
+
+    Ok(der)
 }

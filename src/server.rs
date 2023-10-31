@@ -3,12 +3,12 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyString, PyTuple};
+use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
 use rustls::{Certificate, PrivateKey};
 use rustls_pemfile::Item;
 
-use super::{IoState, SessionState, TlsError};
+use super::{py_to_der, py_to_pem, IoState, SessionState, TlsError};
 
 #[pyclass]
 pub(crate) struct ServerSocket {
@@ -130,47 +130,25 @@ impl ServerConfig {
         let mut certs = Vec::with_capacity(cert_chain.len()?);
         for cert in cert_chain {
             let cert = cert?;
-            if let Ok(bytes) = cert.downcast_exact::<PyBytes>() {
-                let bytes = bytes.as_bytes();
-                if bytes.starts_with(b"-----") {
-                    return Err(
-                        PyValueError::new_err("PEM data passed as certificate bytes").into(),
-                    );
-                }
-
+            if let Ok(bytes) = py_to_der(cert) {
                 certs.push(Certificate(bytes.to_vec()));
                 continue;
             }
 
-            let pem = cert.downcast_exact::<PyString>()?.to_str()?;
-            match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
-                Ok(Some(Item::X509Certificate(bytes))) => certs.push(Certificate(bytes)),
-                Ok(Some(_)) => {
-                    return Err(PyValueError::new_err("PEM object of invalid type").into())
-                }
-                Ok(None) => return Err(PyValueError::new_err("invalid PEM certificate").into()),
-                Err(err) => return Err(err.into()),
+            match py_to_pem(cert)? {
+                Item::X509Certificate(bytes) => certs.push(Certificate(bytes)),
+                _ => return Err(PyValueError::new_err("PEM object of invalid type").into()),
             }
         }
 
-        let key = if let Ok(bytes) = private_key.downcast_exact::<PyBytes>() {
-            let bytes = bytes.as_bytes();
-            if bytes.starts_with(b"-----") {
-                return Err(PyValueError::new_err("PEM data passed as private key bytes").into());
-            }
-
+        let key = if let Ok(bytes) = py_to_der(private_key) {
             PrivateKey(bytes.to_vec())
         } else {
-            let pem = private_key.downcast_exact::<PyString>()?.to_str()?;
-            match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
-                Ok(Some(Item::RSAKey(bytes) | Item::ECKey(bytes) | Item::PKCS8Key(bytes))) => {
+            match py_to_pem(private_key)? {
+                Item::RSAKey(bytes) | Item::ECKey(bytes) | Item::PKCS8Key(bytes) => {
                     PrivateKey(bytes)
                 }
-                Ok(Some(_)) => {
-                    return Err(PyValueError::new_err("PEM object of invalid type").into())
-                }
-                Ok(None) => return Err(PyValueError::new_err("invalid PEM certificate").into()),
-                Err(err) => return Err(err.into()),
+                _ => return Err(PyValueError::new_err("PEM object of invalid type").into()),
             }
         };
 
