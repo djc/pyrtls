@@ -126,7 +126,7 @@ pub(crate) struct ServerConfig {
 #[pymethods]
 impl ServerConfig {
     #[new]
-    fn new(cert_chain: &PyIterator, private_key_der: &PyBytes) -> PyResult<Self> {
+    fn new(cert_chain: &PyIterator, private_key: &PyAny) -> PyResult<Self> {
         let mut certs = Vec::with_capacity(cert_chain.len()?);
         for cert in cert_chain {
             let cert = cert?;
@@ -153,7 +153,27 @@ impl ServerConfig {
             }
         }
 
-        let key = PrivateKey(private_key_der.as_bytes().to_vec());
+        let key = if let Ok(bytes) = private_key.downcast_exact::<PyBytes>() {
+            let bytes = bytes.as_bytes();
+            if bytes.starts_with(b"-----") {
+                return Err(PyValueError::new_err("PEM data passed as private key bytes").into());
+            }
+
+            PrivateKey(bytes.to_vec())
+        } else {
+            let pem = private_key.downcast_exact::<PyString>()?.to_str()?;
+            match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
+                Ok(Some(Item::RSAKey(bytes) | Item::ECKey(bytes) | Item::PKCS8Key(bytes))) => {
+                    PrivateKey(bytes)
+                }
+                Ok(Some(_)) => {
+                    return Err(PyValueError::new_err("PEM object of invalid type").into())
+                }
+                Ok(None) => return Err(PyValueError::new_err("invalid PEM certificate").into()),
+                Err(err) => return Err(err.into()),
+            }
+        };
+
         Ok(Self {
             inner: Arc::new(
                 rustls::ServerConfig::builder()
