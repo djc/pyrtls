@@ -14,3 +14,7 @@ rustls = "0.21"
 rustls-native-certs = "0.6.2"
 socket2 = "0.5"
 webpki-roots = "0.25"
+
+[dev-dependencies]
+anyhow = "1"
+rcgen = "0.11.3"
