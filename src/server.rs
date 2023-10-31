@@ -8,6 +8,8 @@ use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
 use rustls::{Certificate, PrivateKey};
 use rustls_pemfile::Item;
 
+use crate::extract_alpn_protocols;
+
 use super::{py_to_der, py_to_pem, IoState, SessionState, TlsError};
 
 #[pyclass]
@@ -126,7 +128,12 @@ pub(crate) struct ServerConfig {
 #[pymethods]
 impl ServerConfig {
     #[new]
-    fn new(cert_chain: &PyIterator, private_key: &PyAny) -> PyResult<Self> {
+    #[pyo3(signature = (cert_chain, private_key, alpn_protocols = None))]
+    fn new(
+        cert_chain: &PyIterator,
+        private_key: &PyAny,
+        alpn_protocols: Option<&PyIterator>,
+    ) -> PyResult<Self> {
         let mut certs = Vec::with_capacity(cert_chain.len()?);
         for cert in cert_chain {
             let cert = cert?;
@@ -152,16 +159,17 @@ impl ServerConfig {
             }
         };
 
+        let mut config = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|err| {
+                PyException::new_err(format!("error initializing ServerConfig: {err}"))
+            })?;
+        config.alpn_protocols = extract_alpn_protocols(alpn_protocols)?;
+
         Ok(Self {
-            inner: Arc::new(
-                rustls::ServerConfig::builder()
-                    .with_safe_defaults()
-                    .with_no_client_auth()
-                    .with_single_cert(certs, key)
-                    .map_err(|err| {
-                        PyException::new_err(format!("error initializing ServerConfig: {err}"))
-                    })?,
-            ),
+            inner: Arc::new(config),
         })
     }
 
