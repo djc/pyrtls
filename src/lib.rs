@@ -6,8 +6,8 @@ use std::os::unix::io::{FromRawFd, RawFd};
 #[cfg(windows)]
 use std::os::windows::io::{FromRawSocket, RawSocket};
 
-use pyo3::exceptions::PyValueError;
-use pyo3::types::{PyBytes, PyModule, PyString};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::types::{PyBytes, PyIterator, PyModule, PyString};
 use pyo3::{pyclass, pymethods, pymodule, PyAny, PyErr, PyResult, Python};
 use rustls::{ConnectionCommon, OwnedTrustAnchor};
 use rustls_pemfile::Item;
@@ -169,6 +169,28 @@ impl From<TlsError> for PyErr {
     fn from(e: TlsError) -> Self {
         PyValueError::new_err(format!("error: {}", e.inner))
     }
+}
+
+fn extract_alpn_protocols(iter: Option<&PyIterator>) -> PyResult<Vec<Vec<u8>>> {
+    let mut alpn = Vec::with_capacity(match iter {
+        Some(ap) => ap.len()?,
+        None => 0,
+    });
+
+    if let Some(protos) = iter {
+        for proto in protos {
+            let proto = proto?;
+            if let Ok(proto) = proto.downcast_exact::<PyBytes>() {
+                alpn.push(proto.as_bytes().to_vec());
+            } else if let Ok(proto) = proto.downcast_exact::<PyString>() {
+                alpn.push(proto.to_str()?.as_bytes().to_vec());
+            } else {
+                return Err(PyTypeError::new_err("invalid type for ALPN protocol").into());
+            }
+        }
+    }
+
+    Ok(alpn)
 }
 
 fn py_to_pem(obj: &PyAny) -> PyResult<Item> {

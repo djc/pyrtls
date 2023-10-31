@@ -10,7 +10,7 @@ use rustls_native_certs::load_native_certs;
 use rustls_pemfile::Item;
 
 use super::{IoState, SessionState, TlsError};
-use crate::{py_to_der, py_to_pem, TrustAnchor};
+use crate::{extract_alpn_protocols, py_to_der, py_to_pem, TrustAnchor};
 
 #[pyclass]
 pub(crate) struct ClientSocket {
@@ -139,11 +139,12 @@ pub(crate) struct ClientConfig {
 #[pymethods]
 impl ClientConfig {
     #[new]
-    #[pyo3(signature = (native_roots = true, mozilla_roots = true, custom_roots = None))]
+    #[pyo3(signature = (native_roots = true, mozilla_roots = true, custom_roots = None, alpn_protocols = None))]
     fn new(
         native_roots: bool,
         mozilla_roots: bool,
         custom_roots: Option<&PyIterator>,
+        alpn_protocols: Option<&PyIterator>,
     ) -> PyResult<Self> {
         let mut roots = RootCertStore::empty();
         if native_roots {
@@ -195,13 +196,14 @@ impl ClientConfig {
             }
         }
 
+        let mut config = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        config.alpn_protocols = extract_alpn_protocols(alpn_protocols)?;
+
         Ok(Self {
-            inner: Arc::new(
-                rustls::ClientConfig::builder()
-                    .with_safe_defaults()
-                    .with_root_certificates(roots)
-                    .with_no_client_auth(),
-            ),
+            inner: Arc::new(config),
         })
     }
 
