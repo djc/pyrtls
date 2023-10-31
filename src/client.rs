@@ -7,9 +7,10 @@ use pyo3::types::{PyByteArray, PyBytes, PyIterator, PyString, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
 use rustls::{OwnedTrustAnchor, RootCertStore};
 use rustls_native_certs::load_native_certs;
+use rustls_pemfile::Item;
 
 use super::{IoState, SessionState, TlsError};
-use crate::TrustAnchor;
+use crate::{py_to_der, py_to_pem, TrustAnchor};
 
 #[pyclass]
 pub(crate) struct ClientSocket {
@@ -165,7 +166,32 @@ impl ClientConfig {
         if let Some(custom_roots) = custom_roots {
             for obj in custom_roots {
                 let obj = obj?;
-                roots.add_trust_anchors([obj.extract::<TrustAnchor>()?.inner].into_iter());
+                if let Ok(ta) = obj.extract::<TrustAnchor>() {
+                    roots.add_trust_anchors([ta.inner].into_iter())
+                } else if let Ok(ta) = py_to_der(obj) {
+                    let (added, _) = roots.add_parsable_certificates(&[ta]);
+                    if added != 1 {
+                        return Err(
+                            PyValueError::new_err("unable to parse trust anchor from DER").into(),
+                        );
+                    }
+                } else if let Ok(item) = py_to_pem(obj) {
+                    let der = match item {
+                        Item::X509Certificate(bytes) => bytes,
+                        _ => {
+                            return Err(
+                                PyValueError::new_err("PEM item must be a certificate").into()
+                            )
+                        }
+                    };
+
+                    let (added, _) = roots.add_parsable_certificates(&[der]);
+                    if added != 1 {
+                        return Err(
+                            PyValueError::new_err("unable to parse trust anchor from PEM").into(),
+                        );
+                    }
+                }
             }
         }
 
