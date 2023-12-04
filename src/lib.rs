@@ -9,8 +9,9 @@ use std::os::windows::io::{FromRawSocket, RawSocket};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::types::{PyBytes, PyModule, PyString};
 use pyo3::{pyclass, pymethods, pymodule, PyAny, PyErr, PyResult, Python};
-use rustls::{ConnectionCommon, OwnedTrustAnchor};
+use rustls::ConnectionCommon;
 use rustls_pemfile::Item;
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use socket2::Socket;
 
 mod client;
@@ -107,7 +108,7 @@ where
 #[pyclass]
 #[derive(Clone)]
 struct TrustAnchor {
-    inner: OwnedTrustAnchor,
+    inner: rustls_pki_types::TrustAnchor<'static>,
 }
 
 #[pymethods]
@@ -119,11 +120,12 @@ impl TrustAnchor {
         name_constraints: Option<&PyBytes>,
     ) -> Self {
         Self {
-            inner: OwnedTrustAnchor::from_subject_spki_name_constraints(
-                subject.as_bytes(),
-                subject_public_key_info.as_bytes(),
-                name_constraints.map(|nc| nc.as_bytes()),
-            ),
+            inner: rustls_pki_types::TrustAnchor {
+                subject: subject.as_bytes().into(),
+                subject_public_key_info: subject_public_key_info.as_bytes().into(),
+                name_constraints: name_constraints.map(|nc| nc.as_bytes().into()),
+            }
+            .to_owned(),
         }
     }
 }
@@ -202,11 +204,21 @@ fn py_to_pem(obj: &PyAny) -> PyResult<Item> {
     }
 }
 
-fn py_to_der(obj: &PyAny) -> PyResult<&[u8]> {
+fn py_to_cert_der(obj: &PyAny) -> PyResult<CertificateDer<'_>> {
     let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
     if der.starts_with(b"-----") {
         return Err(PyValueError::new_err("PEM data passed as bytes object"));
     }
 
-    Ok(der)
+    Ok(CertificateDer::from(der))
+}
+
+fn py_to_key_der(obj: &PyAny) -> PyResult<PrivateKeyDer<'_>> {
+    let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
+    if der.starts_with(b"-----") {
+        return Err(PyValueError::new_err("PEM data passed as bytes object"));
+    }
+
+    PrivateKeyDer::try_from(der)
+        .map_err(|err| PyValueError::new_err(format!("error parsing private key: {}", err)))
 }
