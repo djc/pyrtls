@@ -5,12 +5,13 @@ use std::sync::Arc;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::types::{PyByteArray, PyBytes, PyString, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
-use rustls::{OwnedTrustAnchor, RootCertStore};
+use rustls::RootCertStore;
 use rustls_native_certs::load_native_certs;
 use rustls_pemfile::Item;
+use rustls_pki_types::ServerName;
 
 use super::{IoState, SessionState, TlsError};
-use crate::{extract_alpn_protocols, py_to_der, py_to_pem, TrustAnchor};
+use crate::{extract_alpn_protocols, py_to_cert_der, py_to_pem, TrustAnchor};
 
 #[pyclass]
 pub(crate) struct ClientSocket {
@@ -68,8 +69,8 @@ pub(crate) struct ClientConnection {
 impl ClientConnection {
     #[new]
     fn new(config: &ClientConfig, name: &PyString) -> PyResult<Self> {
-        let name = match name.to_str()?.try_into() {
-            Ok(n) => n,
+        let name = match ServerName::try_from(name.to_str()?) {
+            Ok(n) => n.to_owned(),
             Err(_) => return Err(PyValueError::new_err("invalid hostname")),
         };
 
@@ -150,54 +151,42 @@ impl ClientConfig {
         if native_roots {
             for root in load_native_certs()? {
                 // TODO: report the error somehow
-                let _ = roots.add(&rustls::Certificate(root.0));
+                let _ = roots.add(root);
             }
         }
 
         if mozilla_roots {
-            roots.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-                OwnedTrustAnchor::from_subject_spki_name_constraints(
-                    ta.subject,
-                    ta.spki,
-                    ta.name_constraints,
-                )
-            }));
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         }
 
         if let Some(custom_roots) = custom_roots {
             for obj in custom_roots.iter()? {
                 let obj = obj?;
                 if let Ok(ta) = obj.extract::<TrustAnchor>() {
-                    roots.add_trust_anchors([ta.inner].into_iter())
-                } else if let Ok(ta) = py_to_der(obj) {
-                    let (added, _) = roots.add_parsable_certificates(&[ta]);
+                    roots.extend([ta.inner].into_iter())
+                } else if let Ok(ta) = py_to_cert_der(obj) {
+                    let (added, _) = roots.add_parsable_certificates([ta]);
                     if added != 1 {
-                        return Err(
-                            PyValueError::new_err("unable to parse trust anchor from DER"),
-                        );
+                        return Err(PyValueError::new_err(
+                            "unable to parse trust anchor from DER",
+                        ));
                     }
                 } else if let Ok(item) = py_to_pem(obj) {
                     let der = match item {
                         Item::X509Certificate(bytes) => bytes,
-                        _ => {
-                            return Err(
-                                PyValueError::new_err("PEM item must be a certificate")
-                            )
-                        }
+                        _ => return Err(PyValueError::new_err("PEM item must be a certificate")),
                     };
 
-                    let (added, _) = roots.add_parsable_certificates(&[der]);
-                    if added != 1 {
-                        return Err(
-                            PyValueError::new_err("unable to parse trust anchor from PEM"),
-                        );
+                    if roots.add(der).is_err() {
+                        return Err(PyValueError::new_err(
+                            "unable to parse trust anchor from PEM",
+                        ));
                     }
                 }
             }
         }
 
         let mut config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(roots)
             .with_no_client_auth();
         config.alpn_protocols = extract_alpn_protocols(alpn_protocols)?;
@@ -214,8 +203,8 @@ impl ClientConfig {
         server_hostname: &PyString,
         do_handshake_on_connect: bool,
     ) -> PyResult<ClientSocket> {
-        let hostname = match server_hostname.to_str()?.try_into() {
-            Ok(n) => n,
+        let hostname = match ServerName::try_from(server_hostname.to_str()?) {
+            Ok(n) => n.to_owned(),
             Err(_) => return Err(PyValueError::new_err("invalid hostname")),
         };
 

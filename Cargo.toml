@@ -10,11 +10,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.20"
-rustls = "0.21"
-rustls-native-certs = "0.6.2"
-rustls-pemfile = "1"
+rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
+rustls-native-certs = "0.7"
+rustls-pemfile = "2"
+rustls-pki-types = { version = "1.4.1", features = ["std"] }
 socket2 = "0.5"
-webpki-roots = "0.25"
+webpki-roots = "0.26"
 
 [dev-dependencies]
 anyhow = "1"

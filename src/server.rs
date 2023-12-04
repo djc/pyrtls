@@ -5,12 +5,12 @@ use std::sync::Arc;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::types::{PyByteArray, PyBytes, PyTuple};
 use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
-use rustls::{Certificate, PrivateKey};
 use rustls_pemfile::Item;
 
-use crate::extract_alpn_protocols;
-
-use super::{py_to_der, py_to_pem, IoState, SessionState, TlsError};
+use crate::{
+    extract_alpn_protocols, py_to_cert_der, py_to_key_der, py_to_pem, IoState, SessionState,
+    TlsError,
+};
 
 #[pyclass]
 pub(crate) struct ServerSocket {
@@ -137,30 +137,29 @@ impl ServerConfig {
         let mut certs = Vec::new();
         for cert in cert_chain.iter()? {
             let cert = cert?;
-            if let Ok(bytes) = py_to_der(cert) {
-                certs.push(Certificate(bytes.to_vec()));
+            if let Ok(cert_der) = py_to_cert_der(cert) {
+                certs.push(cert_der.into_owned());
                 continue;
             }
 
             match py_to_pem(cert)? {
-                Item::X509Certificate(bytes) => certs.push(Certificate(bytes)),
+                Item::X509Certificate(bytes) => certs.push(bytes),
                 _ => return Err(PyValueError::new_err("PEM object of invalid type")),
             }
         }
 
-        let key = if let Ok(bytes) = py_to_der(private_key) {
-            PrivateKey(bytes.to_vec())
+        let key = if let Ok(key_der) = py_to_key_der(private_key) {
+            key_der.clone_key()
         } else {
             match py_to_pem(private_key)? {
-                Item::RSAKey(bytes) | Item::ECKey(bytes) | Item::PKCS8Key(bytes) => {
-                    PrivateKey(bytes)
-                }
+                Item::Pkcs1Key(key) => key.into(),
+                Item::Sec1Key(key) => key.into(),
+                Item::Pkcs8Key(key) => key.into(),
                 _ => return Err(PyValueError::new_err("PEM object of invalid type")),
             }
         };
 
         let mut config = rustls::ServerConfig::builder()
-            .with_safe_defaults()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|err| {
