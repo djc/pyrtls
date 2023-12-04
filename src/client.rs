@@ -16,6 +16,7 @@ use rustls_pki_types::ServerName;
 use super::{IoState, SessionState, TlsError};
 use crate::{extract_alpn_protocols, py_to_cert_der, py_to_pem, TrustAnchor};
 
+/// A socket-like object that will initiate a TLS handshake
 #[pyclass]
 pub(crate) struct ClientSocket {
     state: SessionState<rustls::ClientConnection>,
@@ -24,6 +25,7 @@ pub(crate) struct ClientSocket {
 
 #[pymethods]
 impl ClientSocket {
+    /// Connect to a remote socket address
     fn connect(&mut self, address: &Bound<'_, PyTuple>) -> PyResult<()> {
         if address.len() != 2 {
             return Err(PyValueError::new_err(
@@ -51,14 +53,17 @@ impl ClientSocket {
         Ok(())
     }
 
+    /// Initiate the TLS handshake
     fn do_handshake(&mut self) -> PyResult<()> {
         self.state.do_handshake()
     }
 
+    /// Send bytes
     fn send(&mut self, bytes: &Bound<'_, PyBytes>) -> PyResult<usize> {
         self.state.send(bytes)
     }
 
+    /// Receive bytes
     fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
         self.state.recv(size, py)
     }
@@ -71,6 +76,9 @@ pub(crate) struct ClientConnection {
 
 #[pymethods]
 impl ClientConnection {
+    /// A `ClientConnection` contains TLS state associated with a single client-side connection
+    ///
+    /// It can be created by passing in a `ClientConfig` and the server's `name`.
     #[new]
     fn new(config: &ClientConfig, name: &Bound<'_, PyString>) -> PyResult<Self> {
         let name = match ServerName::try_from(name.to_str()?) {
@@ -136,6 +144,7 @@ impl ClientConnection {
     }
 }
 
+/// Configuration for a TLS client
 #[pyclass]
 pub(crate) struct ClientConfig {
     inner: Arc<rustls::ClientConfig>,
@@ -143,6 +152,7 @@ pub(crate) struct ClientConfig {
 
 #[pymethods]
 impl ClientConfig {
+    /// Initialize a TLS client configuration
     #[new]
     #[pyo3(signature = (native_roots = true, mozilla_roots = true, custom_roots = None, alpn_protocols = None))]
     fn new(
