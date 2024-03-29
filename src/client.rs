@@ -173,7 +173,7 @@ impl ClientConfig {
                     let (added, _) = roots.add_parsable_certificates(&[ta]);
                     if added != 1 {
                         return Err(
-                            PyValueError::new_err("unable to parse trust anchor from DER").into(),
+                            PyValueError::new_err("unable to parse trust anchor from DER"),
                         );
                     }
                 } else if let Ok(item) = py_to_pem(obj) {
@@ -181,7 +181,7 @@ impl ClientConfig {
                         Item::X509Certificate(bytes) => bytes,
                         _ => {
                             return Err(
-                                PyValueError::new_err("PEM item must be a certificate").into()
+                                PyValueError::new_err("PEM item must be a certificate")
                             )
                         }
                     };
@@ -189,7 +189,7 @@ impl ClientConfig {
                     let (added, _) = roots.add_parsable_certificates(&[der]);
                     if added != 1 {
                         return Err(
-                            PyValueError::new_err("unable to parse trust anchor from PEM").into(),
+                            PyValueError::new_err("unable to parse trust anchor from PEM"),
                         );
                     }
                 }

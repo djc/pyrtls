@@ -185,7 +185,7 @@ fn extract_alpn_protocols(iter: Option<&PyAny>) -> PyResult<Vec<Vec<u8>>> {
             } else if let Ok(proto) = proto.downcast_exact::<PyString>() {
                 alpn.push(proto.to_str()?.as_bytes().to_vec());
             } else {
-                return Err(PyTypeError::new_err("invalid type for ALPN protocol").into());
+                return Err(PyTypeError::new_err("invalid type for ALPN protocol"));
             }
         }
     }
@@ -197,7 +197,7 @@ fn py_to_pem(obj: &PyAny) -> PyResult<Item> {
     let pem = obj.downcast_exact::<PyString>()?.to_str()?;
     match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
         Ok(Some(item)) => Ok(item),
-        Ok(None) => Err(PyValueError::new_err("no data found in PEM string").into()),
+        Ok(None) => Err(PyValueError::new_err("no data found in PEM string")),
         Err(err) => Err(err.into()),
     }
 }
@@ -205,7 +205,7 @@ fn py_to_pem(obj: &PyAny) -> PyResult<Item> {
 fn py_to_der(obj: &PyAny) -> PyResult<&[u8]> {
     let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
     if der.starts_with(b"-----") {
-        return Err(PyValueError::new_err("PEM data passed as bytes object").into());
+        return Err(PyValueError::new_err("PEM data passed as bytes object"));
     }
 
     Ok(der)

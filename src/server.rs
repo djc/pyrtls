@@ -144,7 +144,7 @@ impl ServerConfig {
 
             match py_to_pem(cert)? {
                 Item::X509Certificate(bytes) => certs.push(Certificate(bytes)),
-                _ => return Err(PyValueError::new_err("PEM object of invalid type").into()),
+                _ => return Err(PyValueError::new_err("PEM object of invalid type")),
             }
         }
 
@@ -155,7 +155,7 @@ impl ServerConfig {
                 Item::RSAKey(bytes) | Item::ECKey(bytes) | Item::PKCS8Key(bytes) => {
                     PrivateKey(bytes)
                 }
-                _ => return Err(PyValueError::new_err("PEM object of invalid type").into()),
+                _ => return Err(PyValueError::new_err("PEM object of invalid type")),
             }
         };
 
