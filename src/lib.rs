@@ -7,8 +7,8 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::windows::io::{FromRawSocket, RawSocket};
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::types::{PyBytes, PyModule, PyString};
-use pyo3::{pyclass, pymethods, pymodule, PyAny, PyErr, PyResult, Python};
+use pyo3::types::{PyAnyMethods, PyBytes, PyBytesMethods, PyModule, PyString, PyStringMethods};
+use pyo3::{pyclass, pymethods, pymodule, Bound, PyAny, PyErr, PyResult, Python};
 use rustls::ConnectionCommon;
 use rustls_pemfile::Item;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
@@ -20,7 +20,7 @@ mod server;
 use server::{ServerConfig, ServerConnection, ServerSocket};
 
 #[pymodule]
-fn pyrtls(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pyrtls(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ClientConfig>()?;
     m.add_class::<ClientConnection>()?;
     m.add_class::<ClientSocket>()?;
@@ -42,7 +42,7 @@ impl<C, S> SessionState<C>
 where
     C: Deref<Target = ConnectionCommon<S>> + DerefMut,
 {
-    fn new(sock: &PyAny, conn: C) -> PyResult<Self> {
+    fn new(sock: &Bound<'_, PyAny>, conn: C) -> PyResult<Self> {
         #[cfg(unix)]
         let socket = match sock.call_method0("detach")?.extract::<RawFd>()? {
             -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
@@ -69,20 +69,20 @@ where
         Ok(())
     }
 
-    fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
+    fn send(&mut self, bytes: &Bound<'_, PyBytes>) -> PyResult<usize> {
         let written = self.conn.writer().write(bytes.as_bytes())?;
         let _ = self.conn.complete_io(&mut self.socket)?;
         Ok(written)
     }
 
-    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
+    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
         self.read()?;
         if self.user_buf.len() < size {
             self.user_buf.resize_with(size, || 0);
         }
 
         let read = self.conn.reader().read(&mut self.user_buf[..size])?;
-        Ok(PyBytes::new(py, &self.user_buf[..read]))
+        Ok(PyBytes::new_bound(py, &self.user_buf[..read]))
     }
 
     fn read(&mut self) -> PyResult<()> {
@@ -115,9 +115,9 @@ struct TrustAnchor {
 impl TrustAnchor {
     #[new]
     fn new(
-        subject: &PyBytes,
-        subject_public_key_info: &PyBytes,
-        name_constraints: Option<&PyBytes>,
+        subject: &Bound<'_, PyBytes>,
+        subject_public_key_info: &Bound<'_, PyBytes>,
+        name_constraints: Option<&Bound<'_, PyBytes>>,
     ) -> Self {
         Self {
             inner: rustls_pki_types::TrustAnchor {
@@ -173,7 +173,7 @@ impl From<TlsError> for PyErr {
     }
 }
 
-fn extract_alpn_protocols(iter: Option<&PyAny>) -> PyResult<Vec<Vec<u8>>> {
+fn extract_alpn_protocols(iter: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<Vec<u8>>> {
     let mut alpn = Vec::with_capacity(match iter {
         Some(ap) => ap.len()?,
         None => 0,
@@ -195,7 +195,7 @@ fn extract_alpn_protocols(iter: Option<&PyAny>) -> PyResult<Vec<Vec<u8>>> {
     Ok(alpn)
 }
 
-fn py_to_pem(obj: &PyAny) -> PyResult<Item> {
+fn py_to_pem(obj: &Bound<'_, PyAny>) -> PyResult<Item> {
     let pem = obj.downcast_exact::<PyString>()?.to_str()?;
     match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
         Ok(Some(item)) => Ok(item),
@@ -204,7 +204,7 @@ fn py_to_pem(obj: &PyAny) -> PyResult<Item> {
     }
 }
 
-fn py_to_cert_der(obj: &PyAny) -> PyResult<CertificateDer<'_>> {
+fn py_to_cert_der<'a>(obj: &'a Bound<'a, PyAny>) -> PyResult<CertificateDer<'a>> {
     let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
     if der.starts_with(b"-----") {
         return Err(PyValueError::new_err("PEM data passed as bytes object"));
@@ -213,7 +213,7 @@ fn py_to_cert_der(obj: &PyAny) -> PyResult<CertificateDer<'_>> {
     Ok(CertificateDer::from(der))
 }
 
-fn py_to_key_der(obj: &PyAny) -> PyResult<PrivateKeyDer<'_>> {
+fn py_to_key_der<'a>(obj: &'a Bound<'a, PyAny>) -> PyResult<PrivateKeyDer<'a>> {
     let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
     if der.starts_with(b"-----") {
         return Err(PyValueError::new_err("PEM data passed as bytes object"));

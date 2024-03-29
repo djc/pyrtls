@@ -9,7 +9,7 @@ rust-version = "1.63"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.20"
+pyo3 = "0.21"
 rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 rustls-native-certs = "0.7"
 rustls-pemfile = "2"
