@@ -3,8 +3,10 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyByteArray, PyBytes, PyTuple};
-use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
+use pyo3::types::{
+    PyAnyMethods, PyByteArray, PyByteArrayMethods, PyBytes, PyTuple, PyTupleMethods,
+};
+use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
 use rustls_pemfile::Item;
 
 use crate::{
@@ -19,14 +21,15 @@ pub(crate) struct ServerSocket {
 
 #[pymethods]
 impl ServerSocket {
-    fn bind(&mut self, address: &PyTuple) -> PyResult<()> {
+    fn bind(&mut self, address: &Bound<'_, PyTuple>) -> PyResult<()> {
         if address.len() != 2 {
             return Err(PyValueError::new_err(
                 "only 2-element address tuples are supported",
             ));
         }
 
-        let host = address.get_item(0)?.extract::<&str>()?;
+        let host = address.get_item(0)?;
+        let host = host.extract::<&str>()?;
         let port = address.get_item(1)?.extract::<u16>()?;
         let addr = match (host, port).to_socket_addrs()?.next() {
             Some(addr) => addr,
@@ -45,11 +48,11 @@ impl ServerSocket {
         self.state.do_handshake()
     }
 
-    fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
+    fn send(&mut self, bytes: &Bound<'_, PyBytes>) -> PyResult<usize> {
         self.state.send(bytes)
     }
 
-    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
+    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
         self.state.recv(size, py)
     }
 }
@@ -108,13 +111,13 @@ impl ServerConnection {
     /// Write TLS messages from the internal buffer into `buf`
     ///
     /// Mirrors the `RawIO.readinto()` interface.
-    fn write_tls_into(&mut self, buf: &PyByteArray) -> PyResult<usize> {
+    fn write_tls_into(&mut self, buf: &Bound<'_, PyByteArray>) -> PyResult<usize> {
         let mut buf = unsafe { buf.as_bytes_mut() };
         Ok(self.inner.write_tls(&mut buf).map_err(TlsError::from)?)
     }
 
     /// Read new plaintext data from the TLS connection
-    fn read_into(&mut self, buf: &PyByteArray) -> PyResult<usize> {
+    fn read_into(&mut self, buf: &Bound<'_, PyByteArray>) -> PyResult<usize> {
         let buf = unsafe { buf.as_bytes_mut() };
         Ok(self.inner.reader().read(buf).map_err(TlsError::from)?)
     }
@@ -130,19 +133,19 @@ impl ServerConfig {
     #[new]
     #[pyo3(signature = (cert_chain, private_key, alpn_protocols = None))]
     fn new(
-        cert_chain: &PyAny,
-        private_key: &PyAny,
-        alpn_protocols: Option<&PyAny>,
+        cert_chain: &Bound<'_, PyAny>,
+        private_key: &Bound<'_, PyAny>,
+        alpn_protocols: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let mut certs = Vec::new();
         for cert in cert_chain.iter()? {
             let cert = cert?;
-            if let Ok(cert_der) = py_to_cert_der(cert) {
+            if let Ok(cert_der) = py_to_cert_der(&cert) {
                 certs.push(cert_der.into_owned());
                 continue;
             }
 
-            match py_to_pem(cert)? {
+            match py_to_pem(&cert)? {
                 Item::X509Certificate(bytes) => certs.push(bytes),
                 _ => return Err(PyValueError::new_err("PEM object of invalid type")),
             }
@@ -172,7 +175,7 @@ impl ServerConfig {
         })
     }
 
-    fn wrap_socket(&self, sock: &PyAny) -> PyResult<ServerSocket> {
+    fn wrap_socket(&self, sock: &Bound<'_, PyAny>) -> PyResult<ServerSocket> {
         let conn = match rustls::ServerConnection::new(self.inner.clone()) {
             Ok(conn) => conn,
             Err(err) => {

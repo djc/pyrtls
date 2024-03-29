@@ -3,8 +3,11 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyException, PyValueError};
-use pyo3::types::{PyByteArray, PyBytes, PyString, PyTuple};
-use pyo3::{pyclass, pymethods, PyAny, PyResult, Python};
+use pyo3::types::{
+    PyAnyMethods, PyByteArray, PyByteArrayMethods, PyBytes, PyString, PyStringMethods, PyTuple,
+    PyTupleMethods,
+};
+use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
 use rustls::RootCertStore;
 use rustls_native_certs::load_native_certs;
 use rustls_pemfile::Item;
@@ -21,14 +24,15 @@ pub(crate) struct ClientSocket {
 
 #[pymethods]
 impl ClientSocket {
-    fn connect(&mut self, address: &PyTuple) -> PyResult<()> {
+    fn connect(&mut self, address: &Bound<'_, PyTuple>) -> PyResult<()> {
         if address.len() != 2 {
             return Err(PyValueError::new_err(
                 "only 2-element address tuples are supported",
             ));
         }
 
-        let host = address.get_item(0)?.extract::<&str>()?;
+        let host = address.get_item(0)?;
+        let host = host.extract::<&str>()?;
         let port = address.get_item(1)?.extract::<u16>()?;
         let addr = match (host, port).to_socket_addrs()?.next() {
             Some(addr) => addr,
@@ -51,11 +55,11 @@ impl ClientSocket {
         self.state.do_handshake()
     }
 
-    fn send(&mut self, bytes: &PyBytes) -> PyResult<usize> {
+    fn send(&mut self, bytes: &Bound<'_, PyBytes>) -> PyResult<usize> {
         self.state.send(bytes)
     }
 
-    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<&'p PyBytes> {
+    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
         self.state.recv(size, py)
     }
 }
@@ -68,7 +72,7 @@ pub(crate) struct ClientConnection {
 #[pymethods]
 impl ClientConnection {
     #[new]
-    fn new(config: &ClientConfig, name: &PyString) -> PyResult<Self> {
+    fn new(config: &ClientConfig, name: &Bound<'_, PyString>) -> PyResult<Self> {
         let name = match ServerName::try_from(name.to_str()?) {
             Ok(n) => n.to_owned(),
             Err(_) => return Err(PyValueError::new_err("invalid hostname")),
@@ -120,13 +124,13 @@ impl ClientConnection {
     /// Write TLS messages from the internal buffer into `buf`
     ///
     /// Mirrors the `RawIO.readinto()` interface.
-    fn write_tls_into(&mut self, buf: &PyByteArray) -> PyResult<usize> {
+    fn write_tls_into(&mut self, buf: &Bound<'_, PyByteArray>) -> PyResult<usize> {
         let mut buf = unsafe { buf.as_bytes_mut() };
         Ok(self.inner.write_tls(&mut buf).map_err(TlsError::from)?)
     }
 
     /// Read new plaintext data from the TLS connection
-    fn read_into(&mut self, buf: &PyByteArray) -> PyResult<usize> {
+    fn read_into(&mut self, buf: &Bound<'_, PyByteArray>) -> PyResult<usize> {
         let buf = unsafe { buf.as_bytes_mut() };
         Ok(self.inner.reader().read(buf).map_err(TlsError::from)?)
     }
@@ -144,8 +148,8 @@ impl ClientConfig {
     fn new(
         native_roots: bool,
         mozilla_roots: bool,
-        custom_roots: Option<&PyAny>,
-        alpn_protocols: Option<&PyAny>,
+        custom_roots: Option<&Bound<'_, PyAny>>,
+        alpn_protocols: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let mut roots = RootCertStore::empty();
         if native_roots {
@@ -164,14 +168,14 @@ impl ClientConfig {
                 let obj = obj?;
                 if let Ok(ta) = obj.extract::<TrustAnchor>() {
                     roots.extend([ta.inner].into_iter())
-                } else if let Ok(ta) = py_to_cert_der(obj) {
+                } else if let Ok(ta) = py_to_cert_der(&obj) {
                     let (added, _) = roots.add_parsable_certificates([ta]);
                     if added != 1 {
                         return Err(PyValueError::new_err(
                             "unable to parse trust anchor from DER",
                         ));
                     }
-                } else if let Ok(item) = py_to_pem(obj) {
+                } else if let Ok(item) = py_to_pem(&obj) {
                     let der = match item {
                         Item::X509Certificate(bytes) => bytes,
                         _ => return Err(PyValueError::new_err("PEM item must be a certificate")),
@@ -199,8 +203,8 @@ impl ClientConfig {
     #[pyo3(signature = (sock, server_hostname, do_handshake_on_connect=true))]
     fn wrap_socket(
         &self,
-        sock: &PyAny,
-        server_hostname: &PyString,
+        sock: &Bound<'_, PyAny>,
+        server_hostname: &Bound<'_, PyString>,
         do_handshake_on_connect: bool,
     ) -> PyResult<ClientSocket> {
         let hostname = match ServerName::try_from(server_hostname.to_str()?) {
