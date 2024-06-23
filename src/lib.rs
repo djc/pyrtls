@@ -1,5 +1,5 @@
 use std::error::Error as StdError;
-use std::io::{Cursor, Read, Write};
+use std::io::{self, Cursor, Read, Write};
 use std::ops::{Deref, DerefMut};
 #[cfg(unix)]
 use std::os::unix::io::{FromRawFd, RawFd};
@@ -36,6 +36,7 @@ struct SessionState<C> {
     read_buf: Vec<u8>,
     readable: usize,
     user_buf: Vec<u8>,
+    blocking: bool,
 }
 
 impl<C, S> SessionState<C>
@@ -43,6 +44,8 @@ where
     C: Deref<Target = ConnectionCommon<S>> + DerefMut,
 {
     fn new(sock: &Bound<'_, PyAny>, conn: C) -> PyResult<Self> {
+        let blocking = sock.call_method0("getblocking")?.extract::<bool>()?;
+
         #[cfg(unix)]
         let socket = match sock.call_method0("detach")?.extract::<RawFd>()? {
             -1 => return Err(PyValueError::new_err("invalid file descriptor number")),
@@ -61,6 +64,7 @@ where
             read_buf: vec![0; 16_384],
             readable: 0,
             user_buf: vec![0; 4_096],
+            blocking,
         })
     }
 
@@ -76,18 +80,46 @@ where
     }
 
     fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
-        self.read()?;
+        self.read(py)?;
         if self.user_buf.len() < size {
             self.user_buf.resize_with(size, || 0);
         }
 
-        let read = self.conn.reader().read(&mut self.user_buf[..size])?;
+        let read = if self.blocking {
+            loop {
+                match self.conn.reader().read(&mut self.user_buf[..size]) {
+                    Ok(n) => break n,
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        py.check_signals()?;
+                        self.read(py)?;
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        } else {
+            self.conn.reader().read(&mut self.user_buf[..size])?
+        };
+
         Ok(PyBytes::new_bound(py, &self.user_buf[..read]))
     }
 
-    fn read(&mut self) -> PyResult<()> {
+    fn read(&mut self, py: Python<'_>) -> PyResult<()> {
         if self.readable < self.read_buf.len() {
-            self.readable += self.socket.read(&mut self.read_buf[self.readable..])?;
+            self.readable += if self.blocking {
+                loop {
+                    match self.socket.read(&mut self.read_buf[self.readable..]) {
+                        Ok(n) => break n,
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            py.check_signals()?;
+                            continue;
+                        }
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+            } else {
+                self.socket.read(&mut self.read_buf[self.readable..])?
+            }
         }
 
         if self.conn.wants_read() {
