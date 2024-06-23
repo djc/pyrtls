@@ -6,11 +6,9 @@ build:
   tools:
     python: "3.12"
     rust: latest
-  jobs:
-    pre_install:
-      - python -m pip install maturin
-    post_install:
-      - maturin build
-      - python -m pip install --user --break-system-packages --force-reinstall target/wheels/*.whl
+python:
+  install:
+    - method: pip
+      path: .
 sphinx:
   configuration: docs/source/conf.py
