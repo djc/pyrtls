@@ -7,7 +7,9 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::windows::io::{FromRawSocket, RawSocket};
 
 use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::types::{PyAnyMethods, PyBytes, PyBytesMethods, PyModule, PyString, PyStringMethods};
+use pyo3::types::{
+    PyAnyMethods, PyBytes, PyBytesMethods, PyModule, PyModuleMethods, PyString, PyStringMethods,
+};
 use pyo3::{pyclass, pymethods, pymodule, Bound, PyAny, PyErr, PyResult, Python};
 use rustls::ConnectionCommon;
 use rustls_pemfile::Item;
@@ -146,6 +148,7 @@ struct TrustAnchor {
 #[pymethods]
 impl TrustAnchor {
     #[new]
+    #[pyo3(signature = (subject, subject_public_key_info, name_constraints=None))]
     fn new(
         subject: &Bound<'_, PyBytes>,
         subject_public_key_info: &Bound<'_, PyBytes>,
