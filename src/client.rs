@@ -163,7 +163,14 @@ impl ClientConfig {
     ) -> PyResult<Self> {
         let mut roots = RootCertStore::empty();
         if native_roots {
-            for root in load_native_certs()? {
+            let result = load_native_certs();
+            if result.certs.is_empty() {
+                return Err(PyValueError::new_err(
+                    "no native certificates found on the system (errors: {result.errors})",
+                ));
+            }
+
+            for root in result.certs {
                 // TODO: report the error somehow
                 let _ = roots.add(root);
             }
