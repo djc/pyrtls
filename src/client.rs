@@ -56,22 +56,34 @@ impl ClientSocket {
         Ok(())
     }
 
-    /// Initiate the TLS handshake
+    /// Perform the TLS setup handshake.
     fn do_handshake(&mut self) -> PyResult<()> {
         self.state.do_handshake()
     }
 
-    /// Send bytes
-    fn send(&mut self, bytes: &Bound<'_, PyBytes>) -> PyResult<usize> {
-        self.state.send(bytes)
-    }
-
-    /// Receive bytes
+    /// Receive data from the socket. The return value is a bytes object representing the data
+    /// received. The maximum amount of data to be received at once is specified by `size`.
+    /// A returned empty bytes object indicates that the client has disconnected.
     fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
         self.state.recv(size, py)
     }
+
+    /// Send data to the socket. The socket must be connected to a remote socket. Returns the
+    /// number of bytes sent. Applications are responsible for checking that all data has been
+    /// sent; if only some of the data was transmitted, the application needs to attempt delivery
+    /// of the remaining data.
+    fn send(&mut self, bytes: &Bound<'_, PyBytes>) -> PyResult<usize> {
+        self.state.send(bytes)
+    }
 }
 
+/// A `ClientConnection` contains TLS state associated with a single client-side connection.
+/// It does not contain any networking state, and is not directly associated with a socket,
+/// so I/O happens via the methods on this object directly.
+///
+/// A `ClientConnection` can be created from a `ClientConfig` `config` and a server name, `name`.
+/// The server name must be either a DNS hostname or an IP address (only string forms are
+/// currently accepted).
 #[pyclass]
 pub(crate) struct ClientConnection {
     inner: rustls::ClientConnection,
@@ -79,9 +91,6 @@ pub(crate) struct ClientConnection {
 
 #[pymethods]
 impl ClientConnection {
-    /// A `ClientConnection` contains TLS state associated with a single client-side connection
-    ///
-    /// It can be created by passing in a `ClientConfig` and the server's `name`.
     #[new]
     fn new(config: &ClientConfig, name: &Bound<'_, PyString>) -> PyResult<Self> {
         let name = match ServerName::try_from(name.to_str()?) {
@@ -95,15 +104,33 @@ impl ClientConnection {
         })
     }
 
-    /// Returns `true` if the caller should call `read_tls()` soon
+    /// Returns `true` if the caller should call `read_tls()` as soon as possible.
+    ///
+    /// If there is pending plaintext data to read, this returns `false`. If your application
+    /// respects this mechanism, only one full TLS message will be buffered by pyrtls.
     fn readable(&self) -> bool {
         self.inner.wants_read()
     }
 
-    /// Read TLS content from `buf` into the internal buffer
+    /// Read TLS content from `buf` into the internal buffer. Return the number of bytes read, or
+    /// `0` once a `close_notify` alert has been received. No additional data is read in this
+    /// state.
+    ///
+    /// Due to internal buffering, `buf` may contain TLS messages in arbitrary-sized chunks (like
+    /// a socket or pipe might).
     ///
     /// You should call `process_new_packets()` each time a call to this function succeeds in
     /// order to empty the incoming TLS data buffer.
+    ///
+    /// Exceptions may be raised to signal backpressure:
+    ///
+    /// * In order to empty the incoming TLS data buffer, you should call `process_new_packets()`
+    ///   each time a call to this function succeeds.
+    /// * In order to empty the incoming plaintext data buffer, you should call `read_into()`
+    ///   after the call to `process_new_packets()`.
+    ///
+    /// You should call `process_new_packets()` each time a call to this function succeeds in
+    /// order to empty the incoming TLS data buffer
     ///
     /// Mirrors the `RawIO.write()` interface.
     fn read_tls(&mut self, buf: &[u8]) -> PyResult<usize> {
@@ -113,7 +140,17 @@ impl ClientConnection {
             .map_err(TlsError::from)?)
     }
 
-    /// Processes any new packets read by a previous call to `read_tls()`
+    /// Processes any new packets read by a previous call to `read_tls()`.
+    ///
+    /// Errors from this function relate to TLS protocol errors, and are fatal to the connection.
+    /// Future calls after an error will do no new work and will return the same error. After an
+    /// error is returned from `process_new_packets()`, you should not call `read_tls()` anymore
+    /// (it will fill up buffers to no purpose). However, you may call the other methods on the
+    /// connection, including `write()` and `write_tls_into()`. Most likely you will want to
+    /// call `write_tls_into()` to send any alerts queued by the error and then close the
+    /// underlying connection.
+    ///
+    /// In case of success, yields an `IoState` object with sundry state about the connection.
     fn process_new_packets(&mut self) -> PyResult<IoState> {
         Ok(self
             .inner
