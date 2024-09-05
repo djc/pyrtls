@@ -16,7 +16,9 @@ use rustls_pki_types::ServerName;
 use super::{IoState, SessionState, TlsError};
 use crate::{extract_alpn_protocols, py_to_cert_der, py_to_pem, TrustAnchor};
 
-/// A socket-like object that will initiate a TLS handshake
+/// A `ClientSocket` is a wrapper type that contains both a `socket.socket` and a
+/// `ClientConnection` object. It is similar to the `ssl.SSLSocket` class from the
+/// standard library and should implement most of the same methods.
 #[pyclass]
 pub(crate) struct ClientSocket {
     state: SessionState<rustls::ClientConnection>,
@@ -25,7 +27,8 @@ pub(crate) struct ClientSocket {
 
 #[pymethods]
 impl ClientSocket {
-    /// Connect to a remote socket address
+    /// Connect to a remote socket address. `address` must currently be a 2-element
+    /// tuple containing a hostname and a port number.
     fn connect(&mut self, address: &Bound<'_, PyTuple>) -> PyResult<()> {
         if address.len() != 2 {
             return Err(PyValueError::new_err(
