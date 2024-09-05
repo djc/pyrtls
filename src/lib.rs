@@ -29,6 +29,7 @@ fn pyrtls(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ServerConfig>()?;
     m.add_class::<ServerConnection>()?;
     m.add_class::<ServerSocket>()?;
+    m.add_class::<IoState>()?;
     Ok(())
 }
 
@@ -172,14 +173,20 @@ struct IoState {
 
 #[pymethods]
 impl IoState {
+    /// How many bytes could be written by `Connection.write_tls_into()` if called right now.
+    /// A anon-zero value implies that `Connection.wants_write()` would yield `True`.
     fn tls_bytes_to_write(&self) -> usize {
         self.inner.tls_bytes_to_write()
     }
 
+    /// How many plaintext bytes are currently buffered in the connection.
     fn plaintext_bytes_to_read(&self) -> usize {
         self.inner.plaintext_bytes_to_read()
     }
 
+    /// `True` if the peer has sent us a `close_notify` alert. This is the TLS mechanism to
+    /// securely half-close a TLS connection, and signifies that the peer will not send any
+    /// further data on this connection.
     fn peer_has_closed(&self) -> bool {
         self.inner.peer_has_closed()
     }
