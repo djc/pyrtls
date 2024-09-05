@@ -30,6 +30,9 @@ Welcome to pyrtls's documentation!
 .. autoclass:: ServerConfig
    :members:
 
+.. autoclass:: IoState
+   :members:
+
 Indices and tables
 ==================
 
