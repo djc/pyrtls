@@ -159,17 +159,28 @@ impl ClientConnection {
             .into())
     }
 
-    /// Write new plaintext data into the TLS connection
+    /// Send the plaintext `buf` to the peer, encrypting and authenticating it. Once this
+    /// function succeeds you should call `write_tls_into()` which will output the
+    /// corresponding TLS records.
+    ///
+    /// This function buffers plaintext sent before the TLS handshake completes, and sends it as
+    /// soon as it can.
     fn write(&mut self, buf: &[u8]) -> PyResult<usize> {
         Ok(self.inner.writer().write(buf).map_err(TlsError::from)?)
     }
 
-    /// Returns `true` if the caller should call `write_tls_into()` soon
+    /// Returns `True` if the caller should call `write_tls_into()` as soon as possible.
     fn writable(&self) -> bool {
         self.inner.wants_write()
     }
 
-    /// Write TLS messages from the internal buffer into `buf`
+    /// Writes TLS messages into `buf`.
+    ///
+    /// On success, this function returns the number of bytes written (after encoding and
+    /// encryption).
+    ///
+    /// After this function returns, the connection buffer may not yet be fully flushed.
+    /// `writable()` can be used to check if the output buffer is empty.
     ///
     /// Mirrors the `RawIO.readinto()` interface.
     fn write_tls_into(&mut self, buf: &Bound<'_, PyByteArray>) -> PyResult<usize> {
@@ -177,14 +188,32 @@ impl ClientConnection {
         Ok(self.inner.write_tls(&mut buf).map_err(TlsError::from)?)
     }
 
-    /// Read new plaintext data from the TLS connection
+    /// Obtain plaintext data received from the peer over this TLS connection.
+    ///
+    /// If the peer closes the TLS connection cleanly, this returns `0` once all the pending data
+    /// has been read. No further data can be received on that connection, so the underlying TCP
+    /// connection should be half-closed too.
+    ///
+    /// If the peer closes the TLS connection uncleanly (a TCP EOF without sending a
+    /// `close_notify` alert) this functions raises a `TlsError` exception once any pending data
+    /// has been read.
+    ///
+    /// Note that support for `close_notify` varies in peer TLS libraries: many do not support it
+    /// and uncleanly close the TCP connection (this might be vulnerable to truncation attacks
+    /// depending on the application protocol). This means applications using pyrtls must both
+    /// handle EOF from this function, **and** unexpected EOF of the underlying TCP connection.
+    ///
+    /// If there are no bytes to read, this raises a `TlsError` exception.
+    ///
+    /// You may learn the number of bytes available at any time by inspecting the return of
+    /// `process_new_packets()`.
     fn read_into(&mut self, buf: &Bound<'_, PyByteArray>) -> PyResult<usize> {
         let buf = unsafe { buf.as_bytes_mut() };
         Ok(self.inner.reader().read(buf).map_err(TlsError::from)?)
     }
 }
 
-/// Configuration for a TLS client
+/// Common configuration for (typically) all connections made by a program.
 #[pyclass]
 pub(crate) struct ClientConfig {
     inner: Arc<rustls::ClientConfig>,
@@ -257,6 +286,10 @@ impl ClientConfig {
         })
     }
 
+    /// Use the `ClientConfig` and the given `sock` to create a `ClientSocket`.
+    ///
+    /// Returns a `ClientSocket` if successful. Raises a `ValueError` if `server_hostname`
+    /// is not a valid server name (either a DNS name or an IP address).
     #[pyo3(signature = (sock, server_hostname, do_handshake_on_connect=true))]
     fn wrap_socket(
         &self,
