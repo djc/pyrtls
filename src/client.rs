@@ -9,9 +9,9 @@ use pyo3::types::{
 };
 use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
 use rustls::RootCertStore;
-use rustls_native_certs::load_native_certs;
 use rustls_pemfile::Item;
 use rustls_pki_types::ServerName;
+use rustls_platform_verifier::Verifier;
 
 use super::{IoState, SessionState, TlsError};
 use crate::{extract_alpn_protocols, py_to_cert_der, py_to_pem, TrustAnchor};
@@ -213,7 +213,29 @@ impl ClientConnection {
     }
 }
 
-/// Common configuration for (typically) all connections made by a program.
+/// Create a new `ClientConfig` object (similar to `ssl.SSLContext`). A new `ClientConnection` can
+/// only be created by passing in a reference to a `ClientConfig` object.
+///
+/// The most important configuration for `ClientConfig` is the certificate verification process.
+/// Three different options are offered to define the desired process:
+///
+/// - `platform_verifier` (enabled by default) will enable the platform's certificate verifier
+///   on platforms that have on, and searching for CA certificates in the system trust store on
+///   other platforms (like Linux and FreeBSD).
+/// - `mozilla_roots` will enable a built-in set of Mozilla root certificates. This is independent
+///   of the operating system, but depends on the pyrtls package to deliver timely updates.
+/// - `custom_roots` allows the caller to specify an iterable of trust anchors. Each item must be:
+///   - A `TrustAnchor` object, which is a wrapper around a `webpki::TrustAnchor` object
+///   - A `bytes` object containing a DER-encoded certificate
+///   - A `str` object containing one PEM-encoded certificate
+///
+/// The `platform_verifier` option cannot currently be combined with `mozilla_roots` or
+/// `custom_roots` (this will raise a `ValueError`), but the latter two can be combined.
+///
+/// Other options:
+///
+/// - `alpn_protocols` must be an iterable containing `bytes` or `str` objects, each representing
+///   one ALPN protocol string.
 #[pyclass]
 pub(crate) struct ClientConfig {
     inner: Arc<rustls::ClientConfig>,
@@ -221,66 +243,70 @@ pub(crate) struct ClientConfig {
 
 #[pymethods]
 impl ClientConfig {
-    /// Initialize a TLS client configuration
     #[new]
-    #[pyo3(signature = (native_roots = true, mozilla_roots = true, custom_roots = None, alpn_protocols = None))]
+    #[pyo3(signature = (*, platform_verifier = true, mozilla_roots = false, custom_roots = None, alpn_protocols = None))]
     fn new(
-        native_roots: bool,
+        platform_verifier: bool,
         mozilla_roots: bool,
         custom_roots: Option<&Bound<'_, PyAny>>,
         alpn_protocols: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let mut roots = RootCertStore::empty();
-        if native_roots {
-            let result = load_native_certs();
-            if result.certs.is_empty() {
+        let builder = rustls::ClientConfig::builder();
+        let mut config = match (platform_verifier, mozilla_roots, custom_roots) {
+            (true, false, None) => builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(Verifier::new())),
+            (false, false, None) => {
+                return Err(PyValueError::new_err("no certificate verifier specified"));
+            }
+            (true, _, _) => {
                 return Err(PyValueError::new_err(
-                    "no native certificates found on the system (errors: {result.errors})",
+                    "platform verifier cannot be used with `mozilla_roots` or `custom_roots`",
                 ));
             }
+            (false, true, custom) | (_, false, custom) => {
+                let mut roots = RootCertStore::empty();
+                if mozilla_roots {
+                    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                }
 
-            for root in result.certs {
-                // TODO: report the error somehow
-                let _ = roots.add(root);
-            }
-        }
+                if let Some(custom) = custom {
+                    for obj in custom.iter()? {
+                        let obj = obj?;
+                        if let Ok(ta) = obj.extract::<TrustAnchor>() {
+                            roots.extend([ta.inner].into_iter())
+                        } else if let Ok(ta) = py_to_cert_der(&obj) {
+                            let (added, _) = roots.add_parsable_certificates([ta]);
+                            if added != 1 {
+                                return Err(PyValueError::new_err(
+                                    "unable to parse trust anchor from DER",
+                                ));
+                            }
+                        } else if let Ok(item) = py_to_pem(&obj) {
+                            let der = match item {
+                                Item::X509Certificate(bytes) => bytes,
+                                _ => {
+                                    return Err(PyValueError::new_err(
+                                        "PEM item must be a certificate",
+                                    ))
+                                }
+                            };
 
-        if mozilla_roots {
-            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        }
-
-        if let Some(custom_roots) = custom_roots {
-            for obj in custom_roots.iter()? {
-                let obj = obj?;
-                if let Ok(ta) = obj.extract::<TrustAnchor>() {
-                    roots.extend([ta.inner].into_iter())
-                } else if let Ok(ta) = py_to_cert_der(&obj) {
-                    let (added, _) = roots.add_parsable_certificates([ta]);
-                    if added != 1 {
-                        return Err(PyValueError::new_err(
-                            "unable to parse trust anchor from DER",
-                        ));
-                    }
-                } else if let Ok(item) = py_to_pem(&obj) {
-                    let der = match item {
-                        Item::X509Certificate(bytes) => bytes,
-                        _ => return Err(PyValueError::new_err("PEM item must be a certificate")),
-                    };
-
-                    if roots.add(der).is_err() {
-                        return Err(PyValueError::new_err(
-                            "unable to parse trust anchor from PEM",
-                        ));
+                            if roots.add(der).is_err() {
+                                return Err(PyValueError::new_err(
+                                    "unable to parse trust anchor from PEM",
+                                ));
+                            }
+                        }
                     }
                 }
+
+                builder.with_root_certificates(roots)
             }
         }
+        .with_no_client_auth();
 
-        let mut config = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
         config.alpn_protocols = extract_alpn_protocols(alpn_protocols)?;
-
         Ok(Self {
             inner: Arc::new(config),
         })
