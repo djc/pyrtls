@@ -61,19 +61,19 @@ impl ClientSocket {
         self.state.do_handshake()
     }
 
-    /// Receive data from the socket. The return value is a bytes object representing the data
-    /// received. The maximum amount of data to be received at once is specified by `size`.
-    /// A returned empty bytes object indicates that the client has disconnected.
-    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
-        self.state.recv(size, py)
-    }
-
     /// Send data to the socket. The socket must be connected to a remote socket. Returns the
     /// number of bytes sent. Applications are responsible for checking that all data has been
     /// sent; if only some of the data was transmitted, the application needs to attempt delivery
     /// of the remaining data.
     fn send(&mut self, bytes: &Bound<'_, PyBytes>) -> PyResult<usize> {
         self.state.send(bytes)
+    }
+
+    /// Receive data from the socket. The return value is a bytes object representing the data
+    /// received. The maximum amount of data to be received at once is specified by `size`.
+    /// A returned empty bytes object indicates that the server has disconnected.
+    fn recv<'p>(&mut self, size: usize, py: Python<'p>) -> PyResult<Bound<'p, PyBytes>> {
+        self.state.recv(size, py)
     }
 }
 

@@ -174,7 +174,7 @@ struct IoState {
 #[pymethods]
 impl IoState {
     /// How many bytes could be written by `Connection.write_tls_into()` if called right now.
-    /// A anon-zero value implies that `Connection.wants_write()` would yield `True`.
+    /// A non-zero value implies that `Connection.wants_write()` would yield `True`.
     #[getter]
     fn tls_bytes_to_write(&self) -> usize {
         self.inner.tls_bytes_to_write()
