@@ -1,4 +1,4 @@
-# pyrtls: rustls-based TLS for Python
+# pyrtls: rustls-based modern TLS for Python
 
 [![Latest version](https://img.shields.io/pypi/v/pyrtls.svg)](https://pypi.org/project/pyrtls)
 [![Documentation](https://readthedocs.org/projects/pyrtls/badge/?version=latest)](https://pyrtls.readthedocs.io)
