@@ -19,6 +19,10 @@ Features
 - Support for ALPN protocol negotiation
 - Support for Server Name Indication (SNI)
 - Support for session resumption
+- Clients use the OS certificate trust store by default
+- Exposes socket wrapper as well as `sans I/O`_ APIs
+
+.. _sans I/O: https://sans-io.readthedocs.io/
 
 Not implemented
 ---------------
