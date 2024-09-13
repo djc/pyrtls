@@ -1,13 +1,14 @@
 pyrtls
 ======
 
-pyrtls provides a modern Rust-based TLS implementation with an API that is intended to be easy
-to use to replace the `ssl` module (but not entirely compatible with it).
+pyrtls provides bindings to `rustls`_, a modern Rust-based TLS implementation with an API that is
+intended to be easy to use to replace the `ssl` module (but not entirely compatible with it).
 
 In addition to being memory-safe, the library is designed to be more secure by default. As such,
 it does not implement older protocol versions, cipher suites with known security problems, and
 some problematic features of the TLS protocol. For more details, review the `rustls manual`_.
 
+.. _rustls: https://github.com/rustls/rustls
 .. _rustls manual: https://docs.rs/rustls/latest/rustls/manual/index.html
 
 Features
