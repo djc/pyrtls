@@ -2,3 +2,4 @@
 Cargo.lock
 *.so
 /docs/build
+__pycache__
