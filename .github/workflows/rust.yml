@@ -26,7 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-      - run: cargo build --all-features --all-targets
+      - run: cargo build --locked --all-features --all-targets
 
   msrv:
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.67.0
-      - run: cargo check --lib --all-features
+      - run: cargo check --lib --locked --all-features
 
   lint:
     runs-on: ubuntu-latest
@@ -45,7 +45,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-features --all-targets -- -D warnings
+      - run: cargo clippy --locked --all-features --all-targets -- -D warnings
 
   audit:
     runs-on: ubuntu-latest
