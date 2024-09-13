@@ -38,6 +38,10 @@ So far this is a side project. Please consider helping out:
 - Support for ALPN protocol negotiation
 - Support for Server Name Indication (SNI)
 - Support for session resumption
+- Clients use the OS certificate trust store by default
+- Exposes socket wrapper as well as [sans I/O][sans-io] APIs
+
+[sans-io]: https://sans-io.readthedocs.io/
 
 Not implemented
 ---------------
