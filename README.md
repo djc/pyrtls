@@ -40,6 +40,7 @@ So far this is a side project. Please consider helping out:
 - Support for session resumption
 - Clients use the OS certificate trust store by default
 - Exposes socket wrapper as well as [sans I/O][sans-io] APIs
+- In basic tests, performance is comparable to the `ssl` module
 
 [sans-io]: https://sans-io.readthedocs.io/
 

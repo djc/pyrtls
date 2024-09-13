@@ -21,6 +21,7 @@ Features
 - Support for session resumption
 - Clients use the OS certificate trust store by default
 - Exposes socket wrapper as well as `sans I/O`_ APIs
+- In basic tests, performance is comparable to the `ssl` module
 
 .. _sans I/O: https://sans-io.readthedocs.io/
 
