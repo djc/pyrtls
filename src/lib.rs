@@ -30,6 +30,8 @@ fn pyrtls(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ServerConnection>()?;
     m.add_class::<ServerSocket>()?;
     m.add_class::<IoState>()?;
+    m.add_class::<TrustAnchor>()?;
+    m.add_class::<TlsError>()?;
     Ok(())
 }
 
@@ -140,6 +142,9 @@ where
     }
 }
 
+/// A `TrustAnchor` represents a trusted authority for verifying certificates. These are used
+/// to verify the chain of trust from a certificate to a trusted root for server certificates.
+/// All arguments must be `bytes` instances containing DER-encoded data.
 #[pyclass]
 #[derive(Clone)]
 struct TrustAnchor {
@@ -201,6 +206,8 @@ impl From<rustls::IoState> for IoState {
     }
 }
 
+/// `TLSError` represents any errors coming from pyrtls. Its string representation
+/// contains more detailed error information.
 #[pyclass(name = "TLSError")]
 struct TlsError {
     inner: Box<dyn StdError + Send + Sync + 'static>,
