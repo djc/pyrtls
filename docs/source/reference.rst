@@ -23,3 +23,9 @@ Reference
 
 .. autoclass:: IoState
    :members:
+
+.. autoclass:: TrustAnchor
+   :members:
+
+.. autoclass:: TLSError
+   :members:
