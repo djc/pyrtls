@@ -24,6 +24,11 @@ from socket import socket
 # lib.rs
 
 class TrustAnchor:
+    """
+    A `TrustAnchor` represents a trusted authority for verifying certificates. These are used
+    to verify the chain of trust from a certificate to a trusted root for server certificates.
+    All arguments must be `bytes` instances containing DER-encoded data.
+    """
     def __new__(
         cls,
         subject: bytes,
@@ -48,7 +53,11 @@ class IoState:
         further data on this connection.
         """
 
-class TLSError: ...
+class TLSError:
+    """
+    `TLSError` represents any errors coming from pyrtls. Its string representation
+    contains more detailed error information.
+    """
 
 # client.rs
 
