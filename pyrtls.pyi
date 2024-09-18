@@ -103,7 +103,7 @@ class ClientConnection:
         respects this mechanism, only one full TLS message will be buffered by pyrtls.
         """
 
-    def read_tls(self, buf: list[int]) -> int:
+    def read_tls(self, buf: bytes) -> int:
         """
         Read TLS content from `buf` into the internal buffer. Return the number of bytes read, or
         `0` once a `close_notify` alert has been received. No additional data is read in this
@@ -143,7 +143,7 @@ class ClientConnection:
         In case of success, yields an `IoState` object with sundry state about the connection.
         """
 
-    def write(self, buf: list[int]) -> int:
+    def write(self, buf: bytes) -> int:
         """
         Send the plaintext `buf` to the peer, encrypting and authenticating it. Once this
         function succeeds you should call `write_tls_into()` which will output the
@@ -153,7 +153,7 @@ class ClientConnection:
         soon as it can.
         """
 
-    def writeable(self) -> bool:
+    def writable(self) -> bool:
         """Returns `True` if the caller should call `write_tls_into()` as soon as possible."""
 
     def write_tls_into(self, buf: bytearray) -> int:
@@ -224,8 +224,8 @@ class ClientConfig:
         *,
         platform_verifier: bool = True,
         mozilla_roots: bool = False,
-        custom_roots: Iterable[TrustAnchor | str | bytes] | None = None,
-        alpn_protocols: Iterable[str | bytes] | None = None,
+        custom_roots: Iterable[TrustAnchor | bytes | str] | None = None,
+        alpn_protocols: Iterable[bytes | str] | None = None,
     ) -> ClientConfig: ...
     def wrap_socket(
         self, sock: socket, server_hostname: str, do_handshake_on_connect: bool = True
@@ -282,7 +282,7 @@ class ServerConnection:
         respects this mechanism, only one full TLS message will be buffered by pyrtls.
         """
 
-    def read_tls(self, buf: list[int]) -> int:
+    def read_tls(self, buf: bytes) -> int:
         """
         Read TLS content from `buf` into the internal buffer. Return the number of bytes read, or
         `0` once a `close_notify` alert has been received. No additional data is read in this
@@ -322,7 +322,7 @@ class ServerConnection:
         In case of success, yields an `IoState` object with sundry state about the connection.
         """
 
-    def write(self, buf: list[int]) -> int:
+    def write(self, buf: bytes) -> int:
         """
         Send the plaintext `buf` to the peer, encrypting and authenticating it. Once this
         function succeeds you should call `write_tls_into()` which will output the
@@ -332,7 +332,7 @@ class ServerConnection:
         soon as it can.
         """
 
-    def writeable(self) -> bool:
+    def writable(self) -> bool:
         """Returns `True` if the caller should call `write_tls_into()` as soon as possible."""
 
     def write_tls_into(self, buf: bytearray) -> int:
@@ -394,10 +394,10 @@ class ServerConfig:
 
     def __new__(
         cls,
-        cert_chain: Iterable[str | bytes],
-        private_key: str | bytes,
+        cert_chain: Iterable[bytes | str],
+        private_key: bytes | str,
         *,
-        alpn_protocols: Iterable[str | bytes] | None = None,
+        alpn_protocols: Iterable[bytes | str] | None = None,
     ) -> ServerConfig: ...
     def wrap_socket(self, sock: socket) -> ServerSocket:
         """
