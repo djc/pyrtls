@@ -12,7 +12,6 @@ crate-type = ["cdylib"]
 pyo3 = "0.22"
 rustls = { version = "0.23", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 rustls-pemfile = "2"
-rustls-pki-types = { version = "1.4.1", features = ["std"] }
 rustls-platform-verifier = "0.3"
 socket2 = "0.5"
 webpki-roots = "0.26"

@@ -10,7 +10,7 @@ use pyo3::types::{
 use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
 use rustls::RootCertStore;
 use rustls_pemfile::Item;
-use rustls_pki_types::ServerName;
+use rustls::pki_types::ServerName;
 use rustls_platform_verifier::Verifier;
 
 use super::{IoState, SessionState, TlsError};

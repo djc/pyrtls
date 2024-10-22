@@ -307,7 +307,6 @@ dependencies = [
  "rcgen",
  "rustls",
  "rustls-pemfile",
- "rustls-pki-types",
  "rustls-platform-verifier",
  "socket2",
  "webpki-roots",
