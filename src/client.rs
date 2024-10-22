@@ -9,8 +9,7 @@ use pyo3::types::{
 };
 use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
 use rustls::RootCertStore;
-use rustls_pemfile::Item;
-use rustls::pki_types::ServerName;
+use rustls::pki_types::{CertificateDer, ServerName};
 use rustls_platform_verifier::Verifier;
 
 use super::{IoState, SessionState, TlsError};
@@ -282,17 +281,8 @@ impl ClientConfig {
                                     "unable to parse trust anchor from DER",
                                 ));
                             }
-                        } else if let Ok(item) = py_to_pem(&obj) {
-                            let der = match item {
-                                Item::X509Certificate(bytes) => bytes,
-                                _ => {
-                                    return Err(PyValueError::new_err(
-                                        "PEM item must be a certificate",
-                                    ))
-                                }
-                            };
-
-                            if roots.add(der).is_err() {
+                        } else if let Ok(cert_der) = py_to_pem::<CertificateDer>(&obj) {
+                            if roots.add(cert_der).is_err() {
                                 return Err(PyValueError::new_err(
                                     "unable to parse trust anchor from PEM",
                                 ));
