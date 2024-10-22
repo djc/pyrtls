@@ -7,7 +7,7 @@ use pyo3::types::{
     PyAnyMethods, PyByteArray, PyByteArrayMethods, PyBytes, PyTuple, PyTupleMethods,
 };
 use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
-use rustls_pemfile::Item;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
 use crate::{
     extract_alpn_protocols, py_to_cert_der, py_to_key_der, py_to_pem, IoState, SessionState,
@@ -237,21 +237,12 @@ impl ServerConfig {
                 continue;
             }
 
-            match py_to_pem(&cert)? {
-                Item::X509Certificate(bytes) => certs.push(bytes),
-                _ => return Err(PyValueError::new_err("PEM object of invalid type")),
-            }
+            certs.push(py_to_pem::<CertificateDer>(&cert)?);
         }
 
-        let key = if let Ok(key_der) = py_to_key_der(private_key) {
-            key_der.clone_key()
-        } else {
-            match py_to_pem(private_key)? {
-                Item::Pkcs1Key(key) => key.into(),
-                Item::Sec1Key(key) => key.into(),
-                Item::Pkcs8Key(key) => key.into(),
-                _ => return Err(PyValueError::new_err("PEM object of invalid type")),
-            }
+        let key = match py_to_key_der(private_key) {
+            Ok(key_der) => key_der.clone_key(),
+            Err(_) => py_to_pem::<PrivateKeyDer>(private_key)?,
         };
 
         let mut config = rustls::ServerConfig::builder()

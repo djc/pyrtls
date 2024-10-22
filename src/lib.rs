@@ -1,5 +1,5 @@
 use std::error::Error as StdError;
-use std::io::{self, Cursor, Read, Write};
+use std::io::{self, Read, Write};
 use std::ops::{Deref, DerefMut};
 #[cfg(unix)]
 use std::os::unix::io::{FromRawFd, RawFd};
@@ -11,9 +11,9 @@ use pyo3::types::{
     PyAnyMethods, PyBytes, PyBytesMethods, PyModule, PyModuleMethods, PyString, PyStringMethods,
 };
 use pyo3::{pyclass, pymethods, pymodule, Bound, PyAny, PyErr, PyResult, Python};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{self, CertificateDer, PrivateKeyDer};
 use rustls::ConnectionCommon;
-use rustls_pemfile::Item;
 use socket2::Socket;
 
 mod client;
@@ -247,12 +247,11 @@ fn extract_alpn_protocols(iter: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<Vec<u
     Ok(alpn)
 }
 
-fn py_to_pem(obj: &Bound<'_, PyAny>) -> PyResult<Item> {
+fn py_to_pem<T: PemObject>(obj: &Bound<'_, PyAny>) -> PyResult<T> {
     let pem = obj.downcast_exact::<PyString>()?.to_str()?;
-    match rustls_pemfile::read_one(&mut Cursor::new(pem)) {
-        Ok(Some(item)) => Ok(item),
-        Ok(None) => Err(PyValueError::new_err("no data found in PEM string")),
-        Err(err) => Err(err.into()),
+    match T::from_pem_slice(pem.as_bytes()) {
+        Ok(obj) => Ok(obj),
+        Err(err) => Err(TlsError::from(err).into()),
     }
 }
 

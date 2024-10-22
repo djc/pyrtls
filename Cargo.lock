@@ -306,7 +306,6 @@ dependencies = [
  "pyo3",
  "rcgen",
  "rustls",
- "rustls-pemfile",
  "rustls-platform-verifier",
  "socket2",
  "webpki-roots",
