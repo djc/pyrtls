@@ -8,8 +8,8 @@ use pyo3::types::{
     PyTupleMethods,
 };
 use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
-use rustls::RootCertStore;
 use rustls::pki_types::{CertificateDer, ServerName};
+use rustls::RootCertStore;
 use rustls_platform_verifier::Verifier;
 
 use super::{IoState, SessionState, TlsError};
