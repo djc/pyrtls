@@ -11,9 +11,9 @@ use pyo3::types::{
     PyAnyMethods, PyBytes, PyBytesMethods, PyModule, PyModuleMethods, PyString, PyStringMethods,
 };
 use pyo3::{pyclass, pymethods, pymodule, Bound, PyAny, PyErr, PyResult, Python};
+use rustls::pki_types::{self, CertificateDer, PrivateKeyDer};
 use rustls::ConnectionCommon;
 use rustls_pemfile::Item;
-use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use socket2::Socket;
 
 mod client;
@@ -148,7 +148,7 @@ where
 #[pyclass]
 #[derive(Clone)]
 struct TrustAnchor {
-    inner: rustls_pki_types::TrustAnchor<'static>,
+    inner: pki_types::TrustAnchor<'static>,
 }
 
 #[pymethods]
@@ -161,7 +161,7 @@ impl TrustAnchor {
         name_constraints: Option<&Bound<'_, PyBytes>>,
     ) -> Self {
         Self {
-            inner: rustls_pki_types::TrustAnchor {
+            inner: pki_types::TrustAnchor {
                 subject: subject.as_bytes().into(),
                 subject_public_key_info: subject_public_key_info.as_bytes().into(),
                 name_constraints: name_constraints.map(|nc| nc.as_bytes().into()),
