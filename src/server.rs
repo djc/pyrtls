@@ -230,7 +230,7 @@ impl ServerConfig {
         alpn_protocols: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let mut certs = Vec::new();
-        for cert in cert_chain.iter()? {
+        for cert in cert_chain.try_iter()? {
             let cert = cert?;
             if let Ok(cert_der) = py_to_cert_der(&cert) {
                 certs.push(cert_der.into_owned());

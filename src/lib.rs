@@ -106,7 +106,7 @@ where
             self.conn.reader().read(&mut self.user_buf[..size])?
         };
 
-        Ok(PyBytes::new_bound(py, &self.user_buf[..read]))
+        Ok(PyBytes::new(py, &self.user_buf[..read]))
     }
 
     fn read(&mut self, py: Python<'_>) -> PyResult<()> {
@@ -232,7 +232,7 @@ fn extract_alpn_protocols(iter: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<Vec<u
     });
 
     if let Some(protos) = iter {
-        for proto in protos.iter()? {
+        for proto in protos.try_iter()? {
             let proto = proto?;
             if let Ok(proto) = proto.downcast_exact::<PyBytes>() {
                 alpn.push(proto.as_bytes().to_vec());

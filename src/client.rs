@@ -270,7 +270,7 @@ impl ClientConfig {
                 }
 
                 if let Some(custom) = custom {
-                    for obj in custom.iter()? {
+                    for obj in custom.try_iter()? {
                         let obj = obj?;
                         if let Ok(ta) = obj.extract::<TrustAnchor>() {
                             roots.extend([ta.inner].into_iter())
