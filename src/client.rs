@@ -10,7 +10,7 @@ use pyo3::types::{
 use pyo3::{pyclass, pymethods, Bound, PyAny, PyResult, Python};
 use rustls::pki_types::{CertificateDer, ServerName};
 use rustls::RootCertStore;
-use rustls_platform_verifier::Verifier;
+use rustls_platform_verifier::BuilderVerifierExt;
 
 use super::{IoState, SessionState, TlsError};
 use crate::{extract_alpn_protocols, py_to_cert_der, py_to_pem, TrustAnchor};
@@ -252,9 +252,7 @@ impl ClientConfig {
     ) -> PyResult<Self> {
         let builder = rustls::ClientConfig::builder();
         let mut config = match (platform_verifier, mozilla_roots, custom_roots) {
-            (true, false, None) => builder
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(Verifier::new())),
+            (true, false, None) => builder.with_platform_verifier().map_err(TlsError::from)?,
             (false, false, None) => {
                 return Err(PyValueError::new_err("no certificate verifier specified"));
             }
