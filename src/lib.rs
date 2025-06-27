@@ -133,7 +133,7 @@ where
             self.readable -= read;
             if read > 0 {
                 if let Err(e) = self.conn.process_new_packets() {
-                    return Err(PyValueError::new_err(format!("error: {}", e)));
+                    return Err(PyValueError::new_err(format!("error: {e}")));
                 }
             }
         }
@@ -271,5 +271,5 @@ fn py_to_key_der<'a>(obj: &'a Bound<'a, PyAny>) -> PyResult<PrivateKeyDer<'a>> {
     }
 
     PrivateKeyDer::try_from(der)
-        .map_err(|err| PyValueError::new_err(format!("error parsing private key: {}", err)))
+        .map_err(|err| PyValueError::new_err(format!("error parsing private key: {err}")))
 }
