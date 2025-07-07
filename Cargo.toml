@@ -12,9 +12,9 @@ crate-type = ["cdylib"]
 pyo3 = "0.25"
 rustls = { version = "0.23.15", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 rustls-platform-verifier = "0.6"
-socket2 = "0.5"
+socket2 = "0.6"
 webpki-roots = "1"
 
 [dev-dependencies]
 anyhow = "1"
-rcgen = "0.13"
+rcgen = "0.14"
