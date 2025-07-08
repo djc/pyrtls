@@ -17,4 +17,4 @@ webpki-roots = "1"
 
 [dev-dependencies]
 anyhow = "1"
-rcgen = "0.13"
+rcgen = "0.14"
