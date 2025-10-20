@@ -9,8 +9,8 @@ rust-version = "1.74"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.26"
-rustls = { version = "0.23.15", default-features = false, features = ["logging", "ring", "std", "tls12"] }
+pyo3 = "0.27"
+rustls = { version = "0.23.33", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 rustls-platform-verifier = "0.6"
 socket2 = "0.6"
 webpki-roots = "1"
