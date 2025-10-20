@@ -234,9 +234,9 @@ fn extract_alpn_protocols(iter: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<Vec<u
     if let Some(protos) = iter {
         for proto in protos.try_iter()? {
             let proto = proto?;
-            if let Ok(proto) = proto.downcast_exact::<PyBytes>() {
+            if let Ok(proto) = proto.cast_exact::<PyBytes>() {
                 alpn.push(proto.as_bytes().to_vec());
-            } else if let Ok(proto) = proto.downcast_exact::<PyString>() {
+            } else if let Ok(proto) = proto.cast_exact::<PyString>() {
                 alpn.push(proto.to_str()?.as_bytes().to_vec());
             } else {
                 return Err(PyTypeError::new_err("invalid type for ALPN protocol"));
@@ -248,7 +248,7 @@ fn extract_alpn_protocols(iter: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<Vec<u
 }
 
 fn py_to_pem<T: PemObject>(obj: &Bound<'_, PyAny>) -> PyResult<T> {
-    let pem = obj.downcast_exact::<PyString>()?.to_str()?;
+    let pem = obj.cast_exact::<PyString>()?.to_str()?;
     match T::from_pem_slice(pem.as_bytes()) {
         Ok(obj) => Ok(obj),
         Err(err) => Err(TlsError::from(err).into()),
@@ -256,7 +256,7 @@ fn py_to_pem<T: PemObject>(obj: &Bound<'_, PyAny>) -> PyResult<T> {
 }
 
 fn py_to_cert_der<'a>(obj: &'a Bound<'a, PyAny>) -> PyResult<CertificateDer<'a>> {
-    let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
+    let der = obj.cast_exact::<PyBytes>()?.as_bytes();
     if der.starts_with(b"-----") {
         return Err(PyValueError::new_err("PEM data passed as bytes object"));
     }
@@ -265,7 +265,7 @@ fn py_to_cert_der<'a>(obj: &'a Bound<'a, PyAny>) -> PyResult<CertificateDer<'a>>
 }
 
 fn py_to_key_der<'a>(obj: &'a Bound<'a, PyAny>) -> PyResult<PrivateKeyDer<'a>> {
-    let der = obj.downcast_exact::<PyBytes>()?.as_bytes();
+    let der = obj.cast_exact::<PyBytes>()?.as_bytes();
     if der.starts_with(b"-----") {
         return Err(PyValueError::new_err("PEM data passed as bytes object"));
     }
