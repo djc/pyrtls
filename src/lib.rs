@@ -145,7 +145,7 @@ where
 /// A `TrustAnchor` represents a trusted authority for verifying certificates. These are used
 /// to verify the chain of trust from a certificate to a trusted root for server certificates.
 /// All arguments must be `bytes` instances containing DER-encoded data.
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 struct TrustAnchor {
     inner: pki_types::TrustAnchor<'static>,
