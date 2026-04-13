@@ -10,8 +10,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.28"
-rustls = { version = "0.23.15", default-features = false, features = ["logging", "ring", "std", "tls12"] }
-rustls-platform-verifier = "0.6"
+rustls = { version = "0.23.38", default-features = false, features = ["logging", "ring", "std", "tls12"] }
+rustls-platform-verifier = "0.7"
 socket2 = "0.6"
 webpki-roots = "1"
 
