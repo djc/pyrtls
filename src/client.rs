@@ -271,7 +271,7 @@ impl ClientConfig {
                     for obj in custom.try_iter()? {
                         let obj = obj?;
                         if let Ok(ta) = obj.extract::<TrustAnchor>() {
-                            roots.extend([ta.inner].into_iter())
+                            roots.extend([ta.inner])
                         } else if let Ok(ta) = py_to_cert_der(&obj) {
                             let (added, _) = roots.add_parsable_certificates([ta]);
                             if added != 1 {
