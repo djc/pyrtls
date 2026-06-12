@@ -9,7 +9,7 @@ rust-version = "1.85"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.28"
+pyo3 = "0.29"
 rustls = { version = "0.23.15", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 rustls-platform-verifier = "0.7"
 socket2 = "0.6"
